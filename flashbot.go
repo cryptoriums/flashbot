@@ -59,8 +59,9 @@ var RequestCall = Request{
 }
 
 type TxResult struct {
-	Error  string `json:"error,omitempty"`
-	Revert string `json:"revert,omitempty"`
+	Error   string `json:"error,omitempty"`
+	Revert  string `json:"revert,omitempty"`
+	GasUsed uint64 `json:"GasUsed,omitempty"`
 }
 
 type Error struct {
@@ -93,7 +94,7 @@ func New(netID *big.Int, prvKey *ecdsa.PrivateKey) (*Flashbot, error) {
 func (self *Flashbot) SendBundle(
 	txsHex []string,
 	blockMaxWait uint64,
-) (string, error) {
+) (string, *Response, error) {
 	r := RequestSend
 
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockMaxWait)
@@ -101,7 +102,7 @@ func (self *Flashbot) SendBundle(
 
 	resp, err := self.req(r)
 	if err != nil {
-		return "", errors.Wrap(err, "flashbot send request")
+		return "", nil, errors.Wrap(err, "flashbot send request")
 	}
 
 	return parseResp(r, resp)
@@ -110,7 +111,7 @@ func (self *Flashbot) SendBundle(
 func (self *Flashbot) CallBundle(
 	txsHex []string,
 	blockMaxWait uint64,
-) (string, error) {
+) (string, *Response, error) {
 	r := RequestCall
 
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockMaxWait)
@@ -118,13 +119,13 @@ func (self *Flashbot) CallBundle(
 
 	resp, err := self.req(r)
 	if err != nil {
-		return "", errors.Wrap(err, "flashbot call request")
+		return "", nil, errors.Wrap(err, "flashbot call request")
 	}
 
 	return parseResp(r, resp)
 }
 
-func parseResp(r Request, resp []byte) (string, error) {
+func parseResp(r Request, resp []byte) (string, *Response, error) {
 	rr := &Response{
 		Error: Error{},
 		Result: struct {
@@ -138,22 +139,22 @@ func parseResp(r Request, resp []byte) (string, error) {
 
 	err := json.Unmarshal(resp, rr)
 	if err != nil {
-		return "", errors.Wrap(err, "unmarshal flashbot call response")
+		return "", rr, errors.Wrap(err, "unmarshal flashbot call response")
 	}
 
 	req, err := json.Marshal(r)
 	if err != nil {
-		return "", errors.Wrap(err, "marshal flashbot call request")
+		return "", rr, errors.Wrap(err, "marshal flashbot call request")
 	}
 
 	if rr.Error.Code != 0 || (len(rr.Result.Results) > 0 && rr.Result.Results[0].Error != "") {
-		return "", errors.Errorf(
+		return "", rr, errors.Errorf(
 			"flashbot request returned an error:%+v, request data:%v",
 			rr,
 			string(req))
 	}
 
-	return "request:" + string(req) + " response:" + string(resp), nil
+	return "request:" + string(req) + " response:" + string(resp), rr, nil
 }
 
 func (self *Flashbot) req(r Request) ([]byte, error) {

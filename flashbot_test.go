@@ -3,6 +3,7 @@ package flashbot
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"math/big"
 	"os"
 	"strconv"
@@ -55,7 +56,7 @@ func Example() {
 
 	netID, err := client.NetworkID(ctx)
 	ExitOnError(logger, err)
-	level.Info(logger).Log("msg", "network", "id", netID.String())
+	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", nodeURL)
 
 	addr, err := GetContractAddress(netID)
 	ExitOnError(logger, err)
@@ -91,33 +92,37 @@ func Example() {
 
 	level.Info(logger).Log("msg", "created transaction", "hash", tx.Hash())
 
-	// err = client.SendTransaction(ctx, tx)
-	// ExitOnError(logger, err)
-	// return
-
 	blockNumber, err := client.BlockNumber(ctx)
 	ExitOnError(logger, err)
 
 	blockNumWaitMax := blockNumber + blockNumWait
 
-	respCall, err := flashbot.CallBundle(
+	respCall, r, err := flashbot.CallBundle(
 		[]string{txHex},
 		blockNumWaitMax,
 	)
 	ExitOnError(logger, err)
 
-	level.Info(logger).Log("msg", "Called Bundle", "resp", "blockMax", strconv.Itoa(int(blockNumWaitMax)), respCall)
+	level.Info(logger).Log("msg", "Called Bundle",
+		"resp", respCall,
+		"blockMax", strconv.Itoa(int(blockNumWaitMax)),
+		"respStruct", fmt.Sprintf("%+v", r),
+	)
 
 	var respSend string
 	for i := uint64(0); i < 20; i++ {
-		respSend, err = flashbot.SendBundle(
+		respSend, _, err = flashbot.SendBundle(
 			[]string{txHex},
 			blockNumWaitMax+i,
 		)
 		ExitOnError(logger, err)
 	}
 
-	level.Info(logger).Log("msg", "Sent Bundle", "blockMax", strconv.Itoa(int(blockNumWaitMax)), "resp", respSend)
+	level.Info(logger).Log("msg", "Sent Bundle",
+		"resp", respSend,
+		"blockMax", strconv.Itoa(int(blockNumWaitMax)),
+		"respStruct", fmt.Sprintf("%+v", r),
+	)
 
 	// Output:
 }
