@@ -91,6 +91,10 @@ func New(netID *big.Int, prvKey *ecdsa.PrivateKey) (*Flashbot, error) {
 
 }
 
+func (self *Flashbot) SetPrivKey(prvKey *ecdsa.PrivateKey) {
+	self.prvKey = prvKey
+}
+
 func (self *Flashbot) SendBundle(
 	txsHex []string,
 	blockMaxWait uint64,
