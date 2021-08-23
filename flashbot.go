@@ -70,29 +70,33 @@ type Error struct {
 }
 
 type Flashbot struct {
-	netID      *big.Int
+	netID      int64
 	prvKey     *ecdsa.PrivateKey
-	publicAddr string
+	publicAddr *common.Address
 }
 
-func New(netID *big.Int, prvKey *ecdsa.PrivateKey) (*Flashbot, error) {
+func New(netID int64, prvKey *ecdsa.PrivateKey) (*Flashbot, error) {
+	fb := &Flashbot{
+		netID: netID,
+	}
+
+	if prvKey != nil {
+		return fb, fb.SetKeys(prvKey)
+	}
+	return fb, nil
+
+}
+
+func (self *Flashbot) SetKeys(prvKey *ecdsa.PrivateKey) error {
 	publicKey := prvKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, errors.New("casting public key to ECDSA")
+		return errors.New("casting public key to ECDSA")
 	}
-
 	publicAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-	return &Flashbot{
-		netID:      netID,
-		prvKey:     prvKey,
-		publicAddr: publicAddress.Hex(),
-	}, nil
-
-}
-
-func (self *Flashbot) SetPrivKey(prvKey *ecdsa.PrivateKey) {
 	self.prvKey = prvKey
+	self.publicAddr = &publicAddress
+	return nil
 }
 
 func (self *Flashbot) SendBundle(
@@ -167,7 +171,7 @@ func (self *Flashbot) req(r Request) ([]byte, error) {
 		return nil, errors.Wrap(err, "marshaling flashbot tx params")
 	}
 
-	url, err := relayURL(int(self.netID.Int64()))
+	url, err := relayURL(int(self.netID))
 	if err != nil {
 		return nil, errors.Wrap(err, "get flashboat relay url")
 	}
@@ -210,7 +214,7 @@ func (self *Flashbot) req(r Request) ([]byte, error) {
 	return res, nil
 }
 
-func (self *Flashbot) NewSignedTX(
+func (self *Flashbot) NewSignedTXLegacy(
 	data []byte,
 	gasLimit uint64,
 	gasPrice *big.Int,
@@ -218,13 +222,13 @@ func (self *Flashbot) NewSignedTX(
 	nonce uint64,
 ) (string, *types.Transaction, error) {
 
-	signer := types.LatestSignerForChainID(self.netID)
+	signer := types.LatestSignerForChainID(big.NewInt(self.netID))
 
 	tx, err := types.SignNewTx(self.prvKey, signer, &types.AccessListTx{
 		Gas:      gasLimit,
 		GasPrice: gasPrice,
 		To:       &to,
-		ChainID:  self.netID,
+		ChainID:  big.NewInt(self.netID),
 		Nonce:    nonce,
 		Data:     data,
 	})
@@ -239,7 +243,41 @@ func (self *Flashbot) NewSignedTX(
 	return hexutil.Encode(dataM), tx, nil
 }
 
+func (self *Flashbot) NewSignedTX(
+	data []byte,
+	gasLimit uint64,
+	gasBaseFee *big.Int,
+	gasTip *big.Int,
+	to common.Address,
+	nonce uint64,
+) (string, *types.Transaction, error) {
+
+	signer := types.LatestSignerForChainID(big.NewInt(self.netID))
+
+	tx, err := types.SignNewTx(self.prvKey, signer, &types.DynamicFeeTx{
+		ChainID:   big.NewInt(self.netID),
+		Nonce:     nonce,
+		GasFeeCap: big.NewInt(0).Add(gasBaseFee, gasTip),
+		GasTipCap: gasTip,
+		Gas:       gasLimit,
+		To:        &to,
+		Data:      data,
+	})
+	if err != nil {
+		return "", nil, errors.Wrap(err, "sign transaction")
+	}
+	dataM, err := tx.MarshalBinary()
+	if err != nil {
+		return "", nil, errors.Wrap(err, "marshal tx data")
+	}
+
+	return hexutil.Encode(dataM), tx, nil
+}
+
 func (self *Flashbot) signPayload(payload []byte) (string, error) {
+	if self.prvKey == nil || self.publicAddr == nil {
+		return "", errors.New("private key is not set")
+	}
 	signature, err := crypto.Sign(
 		accounts.TextHash([]byte(hexutil.Encode(crypto.Keccak256(payload)))),
 		self.prvKey,
@@ -248,7 +286,7 @@ func (self *Flashbot) signPayload(payload []byte) (string, error) {
 		return "", errors.Wrap(err, "sign the payload")
 	}
 
-	return self.publicAddr +
+	return self.publicAddr.Hex() +
 		":" + hexutil.Encode(signature), nil
 }
 
