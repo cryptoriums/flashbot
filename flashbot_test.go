@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/joho/godotenv"
@@ -23,7 +22,7 @@ import (
 
 const (
 	gasLimit     = 3_000_000
-	gasPrice     = 300 * params.GWei
+	gasTip       = 2000000000 // 2 Gwei
 	blockNumWait = 10
 
 	// Some ERC20 token with approve function.
@@ -54,6 +53,10 @@ func Example() {
 	client, err := ethclient.DialContext(ctx, nodeURL)
 	ExitOnError(logger, err)
 
+	block, err := client.HeaderByNumber(ctx, nil)
+	ExitOnError(logger, err)
+	baseFee := block.BaseFee
+
 	netID, err := client.NetworkID(ctx)
 	ExitOnError(logger, err)
 	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", nodeURL)
@@ -64,7 +67,7 @@ func Example() {
 	pubKey, privKey, err := GetKeys()
 	ExitOnError(logger, err)
 
-	flashbot, err := New(netID, privKey)
+	flashbot, err := New(netID.Int64(), privKey)
 	ExitOnError(logger, err)
 
 	// Prepare the data for the TX.
@@ -84,7 +87,8 @@ func Example() {
 	txHex, tx, err := flashbot.NewSignedTX(
 		data,
 		gasLimit,
-		big.NewInt(gasPrice),
+		big.NewInt(baseFee.Int64()+baseFee.Int64()*126/1000),
+		big.NewInt(gasTip),
 		addr,
 		nonce,
 	)
