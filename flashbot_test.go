@@ -27,7 +27,6 @@ const (
 
 	// Some ERC20 token with approve function.
 	contractAddressGoerli  = "0xf74a5ca65e4552cff0f13b116113ccb493c580c5"
-	contractAddressRinkeby = "0xdf032bc4b9dc2782bb09352007d4c57b75160b15"
 	contractAddressMainnet = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
 )
 
@@ -167,8 +166,6 @@ func GetContractAddress(networkID *big.Int) (common.Address, error) {
 	switch netID := networkID.Int64(); netID {
 	case 1:
 		return common.HexToAddress(contractAddressMainnet), nil
-	case 4:
-		return common.HexToAddress(contractAddressRinkeby), nil
 	case 5:
 		return common.HexToAddress(contractAddressGoerli), nil
 	default:
