@@ -207,7 +207,7 @@ func (self *Flashbot) req(r Request) ([]byte, error) {
 	}
 	err = resp.Body.Close()
 	if err != nil {
-		return nil, errors.Wrap(err, "closing flashboat reply body")
+		return nil, errors.Wrap(err, "closing flashbot reply body")
 	}
 
 	return res, nil
@@ -248,6 +248,7 @@ func (self *Flashbot) NewSignedTX(
 	gasBaseFee *big.Int,
 	gasTip *big.Int,
 	to common.Address,
+	value *big.Int,
 	nonce uint64,
 ) (string, *types.Transaction, error) {
 
@@ -260,6 +261,7 @@ func (self *Flashbot) NewSignedTX(
 		GasTipCap: gasTip,
 		Gas:       gasLimit,
 		To:        &to,
+		Value:     value,
 		Data:      data,
 	})
 	if err != nil {

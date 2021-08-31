@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 	"os"
 	"strconv"
@@ -22,15 +24,17 @@ import (
 
 const (
 	gasLimit     = 3_000_000
-	gasTip       = 2000000000 // 2 Gwei
-	blockNumWait = 10
+	blockNumWait = 50
 
 	// Some ERC20 token with approve function.
 	contractAddressGoerli  = "0xf74a5ca65e4552cff0f13b116113ccb493c580c5"
 	contractAddressMainnet = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
 )
 
-var logger log.Logger
+var (
+	logger log.Logger
+	gasTip = big.NewInt(100000000000) // 100Gwei
+)
 
 func init() {
 	logger = log.With(
@@ -87,8 +91,9 @@ func Example() {
 		data,
 		gasLimit,
 		big.NewInt(baseFee.Int64()+baseFee.Int64()*126/1000),
-		big.NewInt(gasTip),
+		gasTip,
 		addr,
+		big.NewInt(0),
 		nonce,
 	)
 	ExitOnError(logger, err)
@@ -130,6 +135,74 @@ func Example() {
 	// Output:
 }
 
+func ExampleFlashbot_SendBundle() {
+	ctx, cncl := context.WithTimeout(context.Background(), time.Hour)
+	defer cncl()
+	client, _ := ethclient.DialContext(ctx, os.Getenv("NODE_URL"))
+	networkId, _ := client.NetworkID(ctx)
+	pubAddr, privKey, _ := GetKeys()
+	pubAddr1, privKey1, _ := GetKeys1()
+	flashBot, _ := New(networkId.Int64(), privKey)
+	nonce, _ := client.NonceAt(ctx, *pubAddr, nil)
+	nonce1, _ := client.NonceAt(ctx, *pubAddr1, nil)
+	block, err := client.HeaderByNumber(ctx, nil)
+	ExitOnError(logger, err)
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID:   networkId,
+		Nonce:     nonce,
+		GasTipCap: gasTip,
+		GasFeeCap: new(big.Int).Add(block.BaseFee, gasTip),
+		To:        pubAddr,
+		Value:     big.NewInt(1),
+		Gas:       21000,
+		Data:      []byte{},
+	})
+	tx1 := types.NewTx(&types.DynamicFeeTx{
+		ChainID:   networkId,
+		Nonce:     nonce1,
+		GasTipCap: new(big.Int).Add(gasTip, big.NewInt(1)),
+		GasFeeCap: new(big.Int).Add(block.BaseFee, new(big.Int).Add(gasTip, big.NewInt(1))),
+		To:        pubAddr1,
+		Value:     big.NewInt(1),
+		Gas:       21000,
+		Data:      []byte{},
+	})
+	signedTx, _ := types.SignTx(tx, types.LatestSignerForChainID(networkId), privKey)
+	signedTx1, _ := types.SignTx(tx1, types.LatestSignerForChainID(networkId), privKey1)
+	bs, _ := signedTx.MarshalBinary()
+	bs1, _ := signedTx1.MarshalBinary()
+	rlp := hexutil.Encode(bs)
+	rlp1 := hexutil.Encode(bs1)
+
+	blockNumWaitMax := block.Number.Uint64() + blockNumWait
+
+	respCall, r, err := flashBot.CallBundle(
+		[]string{rlp, rlp1},
+		blockNumWaitMax,
+	)
+	ExitOnError(logger, err)
+
+	level.Info(logger).Log("msg", "Called Bundle",
+		"resp", respCall,
+		"blockMax", strconv.Itoa(int(blockNumWaitMax)),
+		"respStruct", fmt.Sprintf("%+v", r),
+	)
+
+	respSend, _, err := flashBot.SendBundle(
+		[]string{rlp, rlp1},
+		blockNumWaitMax,
+	)
+	ExitOnError(logger, err)
+
+	level.Info(logger).Log("msg", "Sent Bundle",
+		"resp", respSend,
+		"blockMax", strconv.Itoa(int(blockNumWaitMax)),
+		"respStruct", fmt.Sprintf("%+v", r),
+	)
+
+	//Output:
+}
+
 func ExitOnError(logger log.Logger, err error) {
 	if err != nil {
 		level.Error(logger).Log("err", err)
@@ -139,6 +212,23 @@ func ExitOnError(logger log.Logger, err error) {
 
 func GetKeys() (*common.Address, *ecdsa.PrivateKey, error) {
 	_privateKey := os.Getenv("ETH_PRIVATE_KEY")
+	privateKey, err := crypto.HexToECDSA(strings.TrimSpace(_privateKey))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, nil, errors.New("casting public key to ECDSA")
+	}
+
+	publicAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	return &publicAddress, privateKey, nil
+}
+
+func GetKeys1() (*common.Address, *ecdsa.PrivateKey, error) {
+	_privateKey := os.Getenv("ETH_PRIVATE_KEY1")
 	privateKey, err := crypto.HexToECDSA(strings.TrimSpace(_privateKey))
 	if err != nil {
 		return nil, nil, err
