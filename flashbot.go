@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -101,39 +102,39 @@ func (self *Flashbot) SetKeys(prvKey *ecdsa.PrivateKey) error {
 
 func (self *Flashbot) SendBundle(
 	txsHex []string,
-	blockMaxWait uint64,
-) (string, *Response, error) {
+	blockNumber uint64,
+) (*Response, error) {
 	r := RequestSend
 
-	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockMaxWait)
+	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 	r.Params[0].Txs = txsHex
 
 	resp, err := self.req(r)
 	if err != nil {
-		return "", nil, errors.Wrap(err, "flashbot send request")
+		return nil, errors.Wrap(err, "flashbot send request")
 	}
 
-	return parseResp(r, resp)
+	return parseResp(r, resp, blockNumber)
 }
 
 func (self *Flashbot) CallBundle(
 	txsHex []string,
-	blockMaxWait uint64,
-) (string, *Response, error) {
+	blockNum uint64,
+) (*Response, error) {
 	r := RequestCall
 
-	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockMaxWait)
+	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNum)
 	r.Params[0].Txs = txsHex
 
 	resp, err := self.req(r)
 	if err != nil {
-		return "", nil, errors.Wrap(err, "flashbot call request")
+		return nil, errors.Wrap(err, "flashbot call request")
 	}
 
-	return parseResp(r, resp)
+	return parseResp(r, resp, blockNum)
 }
 
-func parseResp(r Request, resp []byte) (string, *Response, error) {
+func parseResp(r Request, resp []byte, blockNum uint64) (*Response, error) {
 	rr := &Response{
 		Error: Error{},
 		Result: struct {
@@ -147,22 +148,18 @@ func parseResp(r Request, resp []byte) (string, *Response, error) {
 
 	err := json.Unmarshal(resp, rr)
 	if err != nil {
-		return "", rr, errors.Wrap(err, "unmarshal flashbot call response")
-	}
-
-	req, err := json.Marshal(r)
-	if err != nil {
-		return "", rr, errors.Wrap(err, "marshal flashbot call request")
+		return nil, errors.Wrap(err, "unmarshal flashbot call response")
 	}
 
 	if rr.Error.Code != 0 || (len(rr.Result.Results) > 0 && rr.Result.Results[0].Error != "") {
-		return "", rr, errors.Errorf(
-			"flashbot request returned an error:%+v, request data:%v",
-			rr,
-			string(req))
+		errStr := fmt.Sprintf("flashbot request returned an error:%+v block:%v", rr.Error, blockNum)
+		if len(rr.Result.Results) > 0 {
+			errStr += fmt.Sprintf(" Result:%+v , Revert:%+v, GasUsed:%+v", rr.Result.Results[0].Error, rr.Result.Results[0].Revert, rr.Result.Results[0].GasUsed)
+		}
+		return nil, errors.New(errStr)
 	}
 
-	return "request:" + string(req) + " response:" + string(resp), rr, nil
+	return rr, nil
 }
 
 func (self *Flashbot) req(r Request) ([]byte, error) {
@@ -204,7 +201,7 @@ func (self *Flashbot) req(r Request) ([]byte, error) {
 		if err != nil {
 			return nil, errors.Errorf("bad response status %v", resp.Status)
 		}
-		return nil, errors.Errorf("bad response resp status:%v  resp body:%v req body:%+v req headers:%+v", resp.Status, string(rbody)+string(res), string(payload), req.Header)
+		return nil, errors.Errorf("bad response resp status:%v  respBody:%v reqMethod:%+v", resp.Status, string(rbody)+string(res), r.Method)
 	}
 	err = resp.Body.Close()
 	if err != nil {
