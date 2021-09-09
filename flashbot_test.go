@@ -64,7 +64,7 @@ func Example() {
 	pubKey, privKey, err := GetKeys()
 	ExitOnError(logger, err)
 
-	flashbot, err := New(netID, privKey)
+	flashbot, err := New(netID.Int64(), privKey)
 	ExitOnError(logger, err)
 
 	// Prepare the data for the TX.
@@ -85,6 +85,7 @@ func Example() {
 		data,
 		gasLimit,
 		big.NewInt(gasPrice),
+		big.NewInt(0),
 		addr,
 		nonce,
 	)
@@ -95,33 +96,30 @@ func Example() {
 	blockNumber, err := client.BlockNumber(ctx)
 	ExitOnError(logger, err)
 
-	blockNumWaitMax := blockNumber + blockNumWait
+	blockNumMax := blockNumber + blockNumWait
 
-	respCall, r, err := flashbot.CallBundle(
+	resp, err := flashbot.CallBundle(
 		[]string{txHex},
-		blockNumWaitMax,
+		blockNumMax,
 	)
 	ExitOnError(logger, err)
 
 	level.Info(logger).Log("msg", "Called Bundle",
-		"resp", respCall,
-		"blockMax", strconv.Itoa(int(blockNumWaitMax)),
-		"respStruct", fmt.Sprintf("%+v", r),
+		"blockMax", strconv.Itoa(int(blockNumMax)),
+		"respStruct", fmt.Sprintf("%+v", resp),
 	)
 
-	var respSend string
 	for i := uint64(0); i < 20; i++ {
-		respSend, _, err = flashbot.SendBundle(
+		resp, err = flashbot.SendBundle(
 			[]string{txHex},
-			blockNumWaitMax+i,
+			blockNumMax+i,
 		)
 		ExitOnError(logger, err)
 	}
 
 	level.Info(logger).Log("msg", "Sent Bundle",
-		"resp", respSend,
-		"blockMax", strconv.Itoa(int(blockNumWaitMax)),
-		"respStruct", fmt.Sprintf("%+v", r),
+		"blockMax", strconv.Itoa(int(blockNumMax)),
+		"respStruct", fmt.Sprintf("%+v", resp),
 	)
 
 	// Output:
