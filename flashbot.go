@@ -33,12 +33,37 @@ type Request struct {
 	Params  []Params `json:"params,omitempty"`
 }
 
+type Metadata struct {
+	CoinbaseDiff      string
+	EthSentToCoinbase string
+	GasFees           string
+}
+
+type Result struct {
+	BundleGasPrice string
+	BundleHash     string
+	Metadata
+	Results []TxResult
+}
+
+type TxResult struct {
+	Metadata
+	FromAddress string
+	GasPrice    string
+	TxHash      string
+	Error       string
+	Revert      string
+	GasUsed     uint64
+}
+
+type Error struct {
+	Code int
+}
+
 type Response struct {
-	Error  `json:"error,omitempty"`
-	Result struct {
-		BundleHash string     `json:"bundleHash,omitempty"`
-		Results    []TxResult `json:"results,omitempty"`
-	} `json:"result,omitempty"`
+	Error
+	BundleGasPrice string
+	Result         Result
 }
 
 var RequestSend = Request{
@@ -57,17 +82,6 @@ var RequestCall = Request{
 			StateBlockNumber: "latest",
 		},
 	},
-}
-
-type TxResult struct {
-	Error   string `json:"error,omitempty"`
-	Revert  string `json:"revert,omitempty"`
-	GasUsed uint64 `json:"GasUsed,omitempty"`
-}
-
-type Error struct {
-	Code    int    `json:"code,omitempty"`
-	Message string `json:"message,omitempty"`
 }
 
 type Flashbot struct {
@@ -135,16 +149,7 @@ func (self *Flashbot) CallBundle(
 }
 
 func parseResp(r Request, resp []byte, blockNum uint64) (*Response, error) {
-	rr := &Response{
-		Error: Error{},
-		Result: struct {
-			BundleHash string     `json:"bundleHash,omitempty"`
-			Results    []TxResult "json:\"results,omitempty\""
-		}{
-			"",
-			[]TxResult{},
-		},
-	}
+	rr := &Response{}
 
 	err := json.Unmarshal(resp, rr)
 	if err != nil {
