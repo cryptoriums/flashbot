@@ -57,13 +57,13 @@ type TxResult struct {
 }
 
 type Error struct {
-	Code int
+	Code    int
+	Message string
 }
 
 type Response struct {
-	Error
-	BundleGasPrice string
-	Result         Result
+	Error  `json:"error,omitempty"`
+	Result `json:"result,omitempty"`
 }
 
 var RequestSend = Request{
@@ -133,23 +133,26 @@ func (self *Flashbot) SendBundle(
 
 func (self *Flashbot) CallBundle(
 	txsHex []string,
-	blockNum uint64,
 ) (*Response, error) {
 	r := RequestCall
 
-	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNum)
+	blockDummy := uint64(100000000000000)
+
 	r.Params[0].Txs = txsHex
+	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockDummy)
 
 	resp, err := self.req(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
 
-	return parseResp(r, resp, blockNum)
+	return parseResp(r, resp, blockDummy)
 }
 
 func parseResp(r Request, resp []byte, blockNum uint64) (*Response, error) {
-	rr := &Response{}
+	rr := &Response{
+		Result: Result{},
+	}
 
 	err := json.Unmarshal(resp, rr)
 	if err != nil {
@@ -157,7 +160,7 @@ func parseResp(r Request, resp []byte, blockNum uint64) (*Response, error) {
 	}
 
 	if rr.Error.Code != 0 || (len(rr.Result.Results) > 0 && rr.Result.Results[0].Error != "") {
-		errStr := fmt.Sprintf("flashbot request returned an error:%+v block:%v", rr.Error, blockNum)
+		errStr := fmt.Sprintf("flashbot request returned an error:%+v,%v block:%v", rr.Error, rr.Message, blockNum)
 		if len(rr.Result.Results) > 0 {
 			errStr += fmt.Sprintf(" Result:%+v , Revert:%+v, GasUsed:%+v", rr.Result.Results[0].Error, rr.Result.Results[0].Revert, rr.Result.Results[0].GasUsed)
 		}
