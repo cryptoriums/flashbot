@@ -24,6 +24,7 @@ type Params struct {
 	Txs              []string `json:"txs,omitempty"`
 	BlockNumber      string   `json:"blockNumber,omitempty"`
 	StateBlockNumber string   `json:"stateBlockNumber,omitempty"`
+	BundleHash       string   `json:"bundleHash,omitempty"`
 }
 
 type Request struct {
@@ -44,6 +45,19 @@ type Result struct {
 	BundleHash     string
 	Metadata
 	Results []TxResult
+}
+
+type ResultBundleStats struct {
+	Error
+	Result BundleStats
+}
+
+type BundleStats struct {
+	IsSimulated    bool
+	IsHighPriority bool
+	SimulatedAt    time.Time
+	SubmittedAt    time.Time
+	SentToMinersAt time.Time
 }
 
 type TxResult struct {
@@ -81,6 +95,15 @@ var RequestCall = Request{
 		{
 			StateBlockNumber: "latest",
 		},
+	},
+}
+
+var RequestBundleStats = Request{
+	Jsonrpc: "2.0",
+	Id:      1,
+	Method:  "flashbots_getBundleStats",
+	Params: []Params{
+		{},
 	},
 }
 
@@ -128,7 +151,7 @@ func (self *Flashbot) SendBundle(
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
 
-	return parseResp(r, resp, blockNumber)
+	return parseResp(resp, blockNumber)
 }
 
 func (self *Flashbot) CallBundle(
@@ -146,10 +169,38 @@ func (self *Flashbot) CallBundle(
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
 
-	return parseResp(r, resp, blockDummy)
+	return parseResp(resp, blockDummy)
 }
 
-func parseResp(r Request, resp []byte, blockNum uint64) (*Response, error) {
+func (self *Flashbot) GetBundleStats(
+	bundleHash string,
+	blockNumber uint64,
+) (*ResultBundleStats, error) {
+	r := RequestBundleStats
+	r.Params[0].BundleHash = bundleHash
+	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
+
+	resp, err := self.req(r)
+	if err != nil {
+		return nil, errors.Wrap(err, "flashbot call request")
+	}
+
+	rr := &ResultBundleStats{}
+
+	err = json.Unmarshal(resp, rr)
+	if err != nil {
+		return nil, errors.Wrap(err, "unmarshal flashbot bundle stats response")
+	}
+
+	if rr.Error.Code != 0 {
+		return nil, errors.Errorf("flashbot request returned an error:%+v,%v", rr.Error, rr.Message)
+	}
+
+	return rr, nil
+
+}
+
+func parseResp(resp []byte, blockNum uint64) (*Response, error) {
 	rr := &Response{
 		Result: Result{},
 	}
