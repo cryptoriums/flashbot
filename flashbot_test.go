@@ -1,15 +1,18 @@
 package flashbot
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/cryptoriums/telliot/pkg/private_file"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -19,12 +22,13 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
+	"golang.org/x/tools/godoc/util"
 )
 
 const (
-	gasLimit     = 3_000_000
-	gasPrice     = 300 * params.GWei
-	blockNumWait = 10
+	gasLimit    = 3_000_000
+	gasPrice    = 10 * params.GWei
+	blockNumMax = 10
 
 	// Some ERC20 token with approve function.
 	contractAddressGoerli  = "0xf74a5ca65e4552cff0f13b116113ccb493c580c5"
@@ -40,9 +44,31 @@ func init() {
 		"ts", log.TimestampFormat(func() time.Time { return time.Now().UTC() }, "jan 02 15:04:05.00"),
 		"caller", log.Caller(5),
 	)
-	err := godotenv.Load(".env")
 
+	env, err := ioutil.ReadFile(".env")
 	ExitOnError(logger, err)
+	if !util.IsText(env) {
+		level.Info(logger).Log("msg", "env file is encrypted")
+		env = private_file.DecryptWithPasswordLoop(env)
+	}
+
+	rr := bytes.NewReader(env)
+	envMap, err := godotenv.Parse(rr)
+	ExitOnError(logger, err)
+
+	// Copied from the godotenv source code.
+	currentEnv := map[string]bool{}
+	rawEnv := os.Environ()
+	for _, rawEnvLine := range rawEnv {
+		key := strings.Split(rawEnvLine, "=")[0]
+		currentEnv[key] = true
+	}
+
+	for key, value := range envMap {
+		if !currentEnv[key] {
+			os.Setenv(key, value)
+		}
+	}
 }
 
 func Example() {
@@ -76,7 +102,7 @@ func Example() {
 
 	data, err := abiP.Pack(
 		"approve",
-		common.HexToAddress("0xdf032bc4b9dc2782bb09352007d4c57b75160b15"),
+		common.HexToAddress("0xd2ebc17f4dae9e512cae16da5ea9f55b7f65a623"),
 		big.NewInt(1),
 	)
 	ExitOnError(logger, err)
@@ -96,23 +122,19 @@ func Example() {
 	blockNumber, err := client.BlockNumber(ctx)
 	ExitOnError(logger, err)
 
-	blockNumMax := blockNumber + blockNumWait
-
 	resp, err := flashbot.CallBundle(
 		[]string{txHex},
-		blockNumMax,
 	)
 	ExitOnError(logger, err)
 
 	level.Info(logger).Log("msg", "Called Bundle",
-		"blockMax", strconv.Itoa(int(blockNumMax)),
 		"respStruct", fmt.Sprintf("%+v", resp),
 	)
 
-	for i := uint64(0); i < 20; i++ {
+	for i := uint64(1); i < blockNumMax; i++ {
 		resp, err = flashbot.SendBundle(
 			[]string{txHex},
-			blockNumMax+i,
+			blockNumber+i,
 		)
 		ExitOnError(logger, err)
 	}
