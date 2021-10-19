@@ -111,11 +111,15 @@ type Flashbot struct {
 	netID      int64
 	prvKey     *ecdsa.PrivateKey
 	publicAddr *common.Address
+	// Url for the relay, when not set it uses the default flashbot url.
+	// Making it configurable allows using custom relays (i.e. ethermine).
+	url string
 }
 
-func New(netID int64, prvKey *ecdsa.PrivateKey) (*Flashbot, error) {
+func New(netID int64, prvKey *ecdsa.PrivateKey, url string) (*Flashbot, error) {
 	fb := &Flashbot{
 		netID: netID,
+		url:   url,
 	}
 
 	if prvKey != nil {
@@ -146,7 +150,7 @@ func (self *Flashbot) SendBundle(
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 	r.Params[0].Txs = txsHex
 
-	resp, err := self.req(r)
+	resp, err := self.req(r, self.url)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
@@ -164,7 +168,7 @@ func (self *Flashbot) CallBundle(
 	r.Params[0].Txs = txsHex
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockDummy)
 
-	resp, err := self.req(r)
+	resp, err := self.req(r, self.url)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
@@ -180,7 +184,7 @@ func (self *Flashbot) GetBundleStats(
 	r.Params[0].BundleHash = bundleHash
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 
-	resp, err := self.req(r)
+	resp, err := self.req(r, self.url)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
@@ -221,15 +225,16 @@ func parseResp(resp []byte, blockNum uint64) (*Response, error) {
 	return rr, nil
 }
 
-func (self *Flashbot) req(r Request) ([]byte, error) {
+func (self *Flashbot) req(r Request, url string) ([]byte, error) {
 	payload, err := json.Marshal(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "marshaling flashbot tx params")
 	}
-
-	url, err := relayURL(int(self.netID))
-	if err != nil {
-		return nil, errors.Wrap(err, "get flashboat relay url")
+	if url == "" {
+		url, err = relayURLDefault(int(self.netID))
+		if err != nil {
+			return nil, errors.Wrap(err, "get flashboat relay url")
+		}
 	}
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	if err != nil {
@@ -244,7 +249,7 @@ func (self *Flashbot) req(r Request) ([]byte, error) {
 	req.Header.Add("X-Flashbots-Signature", signedP)
 
 	mevHTTPClient := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 3 * time.Second,
 	}
 	resp, err := mevHTTPClient.Do(req)
 	if err != nil {
@@ -346,7 +351,7 @@ func (self *Flashbot) signPayload(payload []byte) (string, error) {
 		":" + hexutil.Encode(signature), nil
 }
 
-func relayURL(id int) (string, error) {
+func relayURLDefault(id int) (string, error) {
 	switch id {
 	case 1:
 		return "https://relay.flashbots.net", nil
