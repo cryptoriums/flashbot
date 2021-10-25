@@ -7,9 +7,8 @@ require (
 	github.com/ethereum/go-ethereum v1.10.8
 	github.com/go-kit/kit v0.10.0
 	github.com/go-kit/log v0.1.0
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.3.0
 	github.com/pkg/errors v0.9.1
 	golang.org/x/tools v0.1.5
 )
-
-replace github.com/tellor-io/telliot => ../../tellor-io/telliot

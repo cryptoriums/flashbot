@@ -32,7 +32,6 @@ const (
 
 	// Some ERC20 token with approve function.
 	contractAddressGoerli  = "0xf74a5ca65e4552cff0f13b116113ccb493c580c5"
-	contractAddressRinkeby = "0xdf032bc4b9dc2782bb09352007d4c57b75160b15"
 	contractAddressMainnet = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
 )
 
@@ -71,9 +70,23 @@ func init() {
 	}
 }
 
+type FlashboterCreator func(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, url string) (Flashboter, error)
+
+func ExampleNewAll() {
+	var newAll = func(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, url string) (Flashboter, error) {
+		return NewAll(netID, prvKeyCall, prvKeySend)
+	}
+	run(newAll)
+	// Output:
+}
+
 func Example() {
-	ctx, cncl := context.WithTimeout(context.Background(), time.Hour)
-	defer cncl()
+	run(New)
+	// Output:
+}
+
+func run(flashbotCreator FlashboterCreator) {
+	ctx := context.Background()
 
 	nodeURL := os.Getenv("NODE_URL")
 
@@ -84,17 +97,20 @@ func Example() {
 	ExitOnError(logger, err)
 	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", nodeURL)
 
-	addr, err := GetContractAddress(netID)
+	privKeyC, pubKeyC, err := GetKey("ETH_PRIVATE_KEY_CALL")
 	ExitOnError(logger, err)
 
-	pubKey, privKey, err := GetKeys()
+	level.Info(logger).Log("msg", "pub key for call", "addr", pubKeyC.Hex())
+
+	privKeyS, pubKeyS, err := GetKey("ETH_PRIVATE_KEY_SEND")
 	ExitOnError(logger, err)
 
-	flashbot, err := New(netID.Int64(), privKey)
+	level.Info(logger).Log("msg", "pub key for send", "addr", pubKeyC.Hex())
+
+	flashbot, err := flashbotCreator(netID.Int64(), privKeyC, privKeyS, "")
 	ExitOnError(logger, err)
 
-	// Prepare the data for the TX.
-	nonce, err := client.NonceAt(ctx, *pubKey, nil)
+	nonce, err := client.NonceAt(ctx, *pubKeyC, nil)
 	ExitOnError(logger, err)
 
 	abiP, err := abi.JSON(strings.NewReader(ContractABI))
@@ -107,44 +123,69 @@ func Example() {
 	)
 	ExitOnError(logger, err)
 
-	txHex, tx, err := flashbot.NewSignedTX(
-		data,
-		gasLimit,
-		big.NewInt(gasPrice),
-		big.NewInt(0),
-		addr,
-		nonce,
-	)
+	addr, err := GetContractAddress(netID)
 	ExitOnError(logger, err)
 
-	level.Info(logger).Log("msg", "created transaction", "hash", tx.Hash())
+	// Make a request to the Call endpoint for simulation.
+	{
 
-	blockNumber, err := client.BlockNumber(ctx)
-	ExitOnError(logger, err)
-
-	resp, err := flashbot.CallBundle(
-		[]string{txHex},
-	)
-	ExitOnError(logger, err)
-
-	level.Info(logger).Log("msg", "Called Bundle",
-		"respStruct", fmt.Sprintf("%+v", resp),
-	)
-
-	for i := uint64(1); i < blockNumMax; i++ {
-		resp, err = flashbot.SendBundle(
-			[]string{txHex},
-			blockNumber+i,
+		txHex, tx, err := NewSignedTX(
+			netID.Int64(),
+			data,
+			gasLimit,
+			big.NewInt(gasPrice),
+			big.NewInt(0),
+			addr,
+			nonce,
+			privKeyC,
 		)
 		ExitOnError(logger, err)
+		level.Info(logger).Log("msg", "created call transaction", "hash", tx.Hash())
+
+		resp, err := flashbot.CallBundle(
+			[]string{txHex},
+		)
+		ExitOnError(logger, err)
+
+		level.Info(logger).Log("msg", "Called Bundle",
+			"respStruct", fmt.Sprintf("%+v", resp),
+		)
 	}
 
-	level.Info(logger).Log("msg", "Sent Bundle",
-		"blockMax", strconv.Itoa(int(blockNumMax)),
-		"respStruct", fmt.Sprintf("%+v", resp),
-	)
+	// Make a call to the Send endpoint.
+	{
+		blockNumber, err := client.BlockNumber(ctx)
+		ExitOnError(logger, err)
+		nonce, err = client.NonceAt(ctx, *pubKeyS, nil)
+		ExitOnError(logger, err)
 
-	// Output:
+		txHex, tx, err := NewSignedTX(
+			netID.Int64(),
+			data,
+			gasLimit,
+			big.NewInt(gasPrice),
+			big.NewInt(0),
+			addr,
+			nonce,
+			privKeyS,
+		)
+		ExitOnError(logger, err)
+		level.Info(logger).Log("msg", "created send transaction", "hash", tx.Hash())
+
+		var resp *Response
+		for i := uint64(1); i < blockNumMax; i++ {
+			resp, err = flashbot.SendBundle(
+				[]string{txHex},
+				blockNumber+i,
+			)
+			ExitOnError(logger, err)
+		}
+
+		level.Info(logger).Log("msg", "Sent Bundle",
+			"blockMax", strconv.Itoa(int(blockNumMax)),
+			"respStruct", fmt.Sprintf("%+v", resp),
+		)
+	}
 }
 
 func ExitOnError(logger log.Logger, err error) {
@@ -154,8 +195,8 @@ func ExitOnError(logger log.Logger, err error) {
 	}
 }
 
-func GetKeys() (*common.Address, *ecdsa.PrivateKey, error) {
-	_privateKey := os.Getenv("ETH_PRIVATE_KEY")
+func GetKey(envName string) (*ecdsa.PrivateKey, *common.Address, error) {
+	_privateKey := os.Getenv(envName)
 	privateKey, err := crypto.HexToECDSA(strings.TrimSpace(_privateKey))
 	if err != nil {
 		return nil, nil, err
@@ -168,7 +209,7 @@ func GetKeys() (*common.Address, *ecdsa.PrivateKey, error) {
 	}
 
 	publicAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-	return &publicAddress, privateKey, nil
+	return privateKey, &publicAddress, nil
 }
 
 func Keccak256(input []byte) [32]byte {
@@ -183,8 +224,6 @@ func GetContractAddress(networkID *big.Int) (common.Address, error) {
 	switch netID := networkID.Int64(); netID {
 	case 1:
 		return common.HexToAddress(contractAddressMainnet), nil
-	case 4:
-		return common.HexToAddress(contractAddressRinkeby), nil
 	case 5:
 		return common.HexToAddress(contractAddressGoerli), nil
 	default:
