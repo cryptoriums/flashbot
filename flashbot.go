@@ -1,5 +1,7 @@
+// Copyright (c) The Cryptorium Authors.
+// Licensed under the MIT License.
+
 // Package flashbot provides a structured way to send TX to the flashbot relays.
-// It expects .env file in the root directory that contains all private virables to run the example.
 package flashbot
 
 import (

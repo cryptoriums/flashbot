@@ -1,3 +1,6 @@
+// Copyright (c) The Cryptorium Authors.
+// Licensed under the MIT License.
+
 package flashbot
 
 import (
@@ -18,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
@@ -45,6 +48,9 @@ func init() {
 	)
 
 	env, err := ioutil.ReadFile(".env")
+	if os.IsNotExist(err) { // In the CI the file doesn't exist and sets directly the env vars.
+		return
+	}
 	ExitOnError(logger, err)
 	if !util.IsText(env) {
 		level.Info(logger).Log("msg", "env file is encrypted")
