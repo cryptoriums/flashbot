@@ -181,7 +181,7 @@ func (self *Flashbots) SendBundle(
 		var err error
 		resp, err = f.SendBundle(txsHex, blockNumber)
 		if err == nil {
-			hashes += self.endpoints[i].URL + resp.BundleHash + ", "
+			hashes += self.endpoints[i].URL + " " + resp.BundleHash + ", "
 			resp.BundleHash = hashes
 			continue
 		}
