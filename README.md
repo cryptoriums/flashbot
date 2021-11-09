@@ -1,3 +1,4 @@
 
 
-For usage and description see https://pkg.go.dev/github.com/cryptoriums/flashbot
+For usage and description see the test files and https://pkg.go.dev/github.com/cryptoriums/flashbot
+
