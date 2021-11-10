@@ -184,8 +184,9 @@ func run(flashbotCreator FlashboterCreator) {
 			resp, err = flashbot.SendBundle(
 				[]string{txHex},
 				blockNumber+i,
-				5*time.Second,
+				10*time.Second,
 			)
+			time.Sleep(time.Second)
 			ExitOnError(logger, err)
 		}
 
