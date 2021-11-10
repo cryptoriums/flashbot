@@ -127,8 +127,8 @@ type Endpoint struct {
 }
 
 type Flashboter interface {
-	SendBundle(txsHex []string, blockNumber uint64) (*Response, error)
-	CallBundle(txsHex []string) (*Response, error)
+	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*Response, error)
+	CallBundle(txsHex []string, timeout time.Duration) (*Response, error)
 }
 
 type Flashbots struct {
@@ -173,13 +173,14 @@ func NewMulti(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey, endpoints .
 func (self *Flashbots) SendBundle(
 	txsHex []string,
 	blockNumber uint64,
+	timeout time.Duration,
 ) (*Response, error) {
 	var errM error
 	var resp *Response
 	var hashes string
 	for i, f := range self.flashbots {
 		var err error
-		resp, err = f.SendBundle(txsHex, blockNumber)
+		resp, err = f.SendBundle(txsHex, blockNumber, timeout)
 		if err == nil {
 			hashes += self.endpoints[i].URL + " " + resp.BundleHash + ", "
 			resp.BundleHash = hashes
@@ -193,6 +194,7 @@ func (self *Flashbots) SendBundle(
 
 func (self *Flashbots) CallBundle(
 	txsHex []string,
+	timeout time.Duration,
 ) (*Response, error) {
 	var errM error
 	var resp *Response
@@ -202,7 +204,7 @@ func (self *Flashbots) CallBundle(
 			continue
 		}
 		var err error
-		resp, err = f.CallBundle(txsHex)
+		resp, err = f.CallBundle(txsHex, timeout)
 		if err == nil {
 			hashes += self.endpoints[i].URL + resp.BundleHash + ", "
 			resp.BundleHash = hashes
@@ -269,13 +271,14 @@ func (self *Flashbot) SetKeys(prvKeyCall, prvKeySend *ecdsa.PrivateKey) error {
 func (self *Flashbot) SendBundle(
 	txsHex []string,
 	blockNumber uint64,
+	timeout time.Duration,
 ) (*Response, error) {
 	r := RequestSend
 
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 	r.Params[0].Txs = txsHex
 
-	resp, err := self.req(r, self.prvKeySend, self.publicKeySend)
+	resp, err := self.req(r, self.prvKeySend, self.publicKeySend, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
@@ -285,6 +288,7 @@ func (self *Flashbot) SendBundle(
 
 func (self *Flashbot) CallBundle(
 	txsHex []string,
+	timeout time.Duration,
 ) (*Response, error) {
 	r := RequestCall
 
@@ -293,7 +297,7 @@ func (self *Flashbot) CallBundle(
 	r.Params[0].Txs = txsHex
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockDummy)
 
-	resp, err := self.req(r, self.prvKeyCall, self.publicKeyCall)
+	resp, err := self.req(r, self.prvKeyCall, self.publicKeyCall, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
@@ -304,12 +308,13 @@ func (self *Flashbot) CallBundle(
 func (self *Flashbot) GetBundleStats(
 	bundleHash string,
 	blockNumber uint64,
+	timeout time.Duration,
 ) (*ResultBundleStats, error) {
 	r := RequestBundleStats
 	r.Params[0].BundleHash = bundleHash
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 
-	resp, err := self.req(r, self.prvKeyCall, self.publicKeyCall)
+	resp, err := self.req(r, self.prvKeyCall, self.publicKeyCall, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
@@ -350,7 +355,7 @@ func parseResp(resp []byte, blockNum uint64) (*Response, error) {
 	return rr, nil
 }
 
-func (self *Flashbot) req(r Request, prvKey *ecdsa.PrivateKey, pubKey *common.Address) ([]byte, error) {
+func (self *Flashbot) req(r Request, prvKey *ecdsa.PrivateKey, pubKey *common.Address, timeout time.Duration) ([]byte, error) {
 	payload, err := json.Marshal(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "marshaling flashbot tx params")
@@ -369,7 +374,7 @@ func (self *Flashbot) req(r Request, prvKey *ecdsa.PrivateKey, pubKey *common.Ad
 	req.Header.Add("X-Flashbots-Signature", signedP)
 
 	mevHTTPClient := &http.Client{
-		Timeout: 3 * time.Second,
+		Timeout: timeout,
 	}
 	resp, err := mevHTTPClient.Do(req)
 	if err != nil {

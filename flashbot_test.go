@@ -150,6 +150,7 @@ func run(flashbotCreator FlashboterCreator) {
 
 		resp, err := flashbot.CallBundle(
 			[]string{txHex},
+			5*time.Second,
 		)
 		ExitOnError(logger, err)
 
@@ -183,6 +184,7 @@ func run(flashbotCreator FlashboterCreator) {
 			resp, err = flashbot.SendBundle(
 				[]string{txHex},
 				blockNumber+i,
+				5*time.Second,
 			)
 			ExitOnError(logger, err)
 		}
