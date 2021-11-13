@@ -1,6 +1,6 @@
 module github.com/cryptoriums/flashbot
 
-go 1.16
+go 1.17
 
 require (
 	github.com/alecthomas/kong v0.2.18-0.20210609031350-33ce628ecde8
