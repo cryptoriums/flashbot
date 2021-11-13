@@ -186,7 +186,7 @@ func (self *Flashbots) SendBundle(
 			resp.BundleHash = hashes
 			continue
 		}
-		errM = multierror.Append(errM, err)
+		errM = multierror.Append(errM, errors.Wrapf(err, "sending bundle to:%v", self.endpoints[i].URL))
 	}
 
 	return resp, errM
@@ -210,7 +210,7 @@ func (self *Flashbots) CallBundle(
 			resp.BundleHash = hashes
 			continue
 		}
-		errM = multierror.Append(errM, err)
+		errM = multierror.Append(errM, errors.Wrapf(err, "calling bundle to:%v", self.endpoints[i].URL))
 	}
 
 	return resp, errM
@@ -283,7 +283,12 @@ func (self *Flashbot) SendBundle(
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
 
-	return parseResp(resp, blockNumber)
+	rr, err := parseResp(resp, blockNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.url)
+	}
+
+	return rr, nil
 }
 
 func (self *Flashbot) CallBundle(
@@ -302,7 +307,12 @@ func (self *Flashbot) CallBundle(
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
 
-	return parseResp(resp, blockDummy)
+	rr, err := parseResp(resp, blockDummy)
+	if err != nil {
+		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.url)
+	}
+
+	return rr, nil
 }
 
 func (self *Flashbot) GetBundleStats(
@@ -341,7 +351,7 @@ func parseResp(resp []byte, blockNum uint64) (*Response, error) {
 
 	err := json.Unmarshal(resp, rr)
 	if err != nil {
-		return nil, errors.Wrap(err, "unmarshal flashbot call response")
+		return nil, errors.Wrapf(err, "unmarshal flashbot call response:%v", string(resp))
 	}
 
 	if rr.Error.Code != 0 || (len(rr.Result.Results) > 0 && rr.Result.Results[0].Error != "") {
