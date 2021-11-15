@@ -76,22 +76,7 @@ func init() {
 	}
 }
 
-type FlashboterCreator func(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, url string) (Flashboter, error)
-
-func ExampleNewAll() {
-	var newAll = func(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, url string) (Flashboter, error) {
-		return NewAll(netID, prvKeyCall, prvKeySend)
-	}
-	run(newAll)
-	// Output:
-}
-
 func Example() {
-	run(New)
-	// Output:
-}
-
-func run(flashbotCreator FlashboterCreator) {
 	ctx := context.Background()
 
 	nodeURL := os.Getenv("NODE_URL")
@@ -113,7 +98,7 @@ func run(flashbotCreator FlashboterCreator) {
 
 	level.Info(logger).Log("msg", "pub key for send", "addr", pubKeyC.Hex())
 
-	flashbot, err := flashbotCreator(netID.Int64(), privKeyC, privKeyS, "")
+	flashbot, err := New(netID.Int64(), privKeyC, privKeyS, Endpoint{URL: "", SupportsSimulation: true})
 	ExitOnError(logger, err)
 
 	nonce, err := client.NonceAt(ctx, *pubKeyC, nil)
@@ -179,7 +164,7 @@ func run(flashbotCreator FlashboterCreator) {
 		ExitOnError(logger, err)
 		level.Info(logger).Log("msg", "created send transaction", "hash", tx.Hash())
 
-		var resp *Response
+		var resp *ResponseSend
 		for i := uint64(1); i < blockNumMax; i++ {
 			resp, err = flashbot.SendBundle(
 				[]string{txHex},
@@ -195,6 +180,8 @@ func run(flashbotCreator FlashboterCreator) {
 			"respStruct", fmt.Sprintf("%+v", resp),
 		)
 	}
+
+	// Output:
 }
 
 func ExitOnError(logger log.Logger, err error) {

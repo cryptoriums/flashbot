@@ -78,9 +78,14 @@ type Error struct {
 	Message string
 }
 
-type Response struct {
+type ResponseCall struct {
 	Error  `json:"error,omitempty"`
 	Result `json:"result,omitempty"`
+}
+
+type ResponseSend struct {
+	Result bool `json:"result,omitempty"`
+	Error  `json:"error,omitempty"`
 }
 
 var RequestSend = Request{
@@ -118,7 +123,7 @@ type Flashbot struct {
 	publicKeyCall *common.Address
 	// url for the relay, when not set it uses the default flashbot url.
 	// Making it configurable allows using custom relays (i.e. ethermine).
-	url string
+	endpoint Endpoint
 }
 
 type Endpoint struct {
@@ -127,16 +132,12 @@ type Endpoint struct {
 }
 
 type Flashboter interface {
-	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*Response, error)
-	CallBundle(txsHex []string, timeout time.Duration) (*Response, error)
+	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*ResponseSend, error)
+	CallBundle(txsHex []string, timeout time.Duration) (*ResponseCall, error)
+	Endpoint() Endpoint
 }
 
-type Flashbots struct {
-	flashbots []Flashboter
-	endpoints []Endpoint
-}
-
-func NewAll(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey) (Flashboter, error) {
+func NewAll(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey) ([]Flashboter, error) {
 	var endpoints []Endpoint
 	url, err := relayURLDefault(netID)
 	if err != nil {
@@ -152,82 +153,33 @@ func NewAll(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey) (Flashboter, 
 	return NewMulti(netID, prvKeyCall, prvKeySend, endpoints...)
 }
 
-func NewMulti(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey, endpoints ...Endpoint) (Flashboter, error) {
+func NewMulti(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey, endpoints ...Endpoint) ([]Flashboter, error) {
 	if len(endpoints) < 1 {
 		return nil, errors.New("should provide at least one endpoint")
 	}
 	var flashbots []Flashboter
 	for _, endpoint := range endpoints {
-		f, err := New(netID, prvKeyCall, prvKeySend, endpoint.URL)
+		f, err := New(netID, prvKeyCall, prvKeySend, endpoint)
 		if err != nil {
 			return nil, errors.Wrapf(err, "create flashbot instance:%v", endpoint.URL)
 		}
 		flashbots = append(flashbots, f)
 	}
-	return &Flashbots{
-		flashbots: flashbots,
-		endpoints: endpoints,
-	}, nil
+	return flashbots, nil
 }
 
-func (self *Flashbots) SendBundle(
-	txsHex []string,
-	blockNumber uint64,
-	timeout time.Duration,
-) (*Response, error) {
-	var errM error
-	var resp *Response
-	var hashes string
-	for i, f := range self.flashbots {
-		var err error
-		resp, err = f.SendBundle(txsHex, blockNumber, timeout)
-		if err == nil {
-			hashes += self.endpoints[i].URL + " " + resp.BundleHash + ", "
-			resp.BundleHash = hashes
-			continue
-		}
-		errM = multierror.Append(errM, errors.Wrapf(err, "sending bundle to:%v", self.endpoints[i].URL))
-	}
-
-	return resp, errM
-}
-
-func (self *Flashbots) CallBundle(
-	txsHex []string,
-	timeout time.Duration,
-) (*Response, error) {
-	var errM error
-	var resp *Response
-	var hashes string
-	for i, f := range self.flashbots {
-		if !self.endpoints[i].SupportsSimulation {
-			continue
-		}
-		var err error
-		resp, err = f.CallBundle(txsHex, timeout)
-		if err == nil {
-			hashes += self.endpoints[i].URL + resp.BundleHash + ", "
-			resp.BundleHash = hashes
-			continue
-		}
-		errM = multierror.Append(errM, errors.Wrapf(err, "calling bundle to:%v", self.endpoints[i].URL))
-	}
-
-	return resp, errM
-}
-
-func New(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, url string) (Flashboter, error) {
+func New(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, endpoint Endpoint) (Flashboter, error) {
 	var err error
-	if url == "" {
-		url, err = relayURLDefault(netID)
+	if endpoint.URL == "" {
+		endpoint.URL, err = relayURLDefault(netID)
 		if err != nil {
 			return nil, errors.Wrap(err, "get flashbot relay url")
 		}
 	}
 
 	fb := &Flashbot{
-		netID: netID,
-		url:   url,
+		netID:    netID,
+		endpoint: endpoint,
 	}
 
 	if prvKeyCall != nil && prvKeySend != nil {
@@ -235,6 +187,10 @@ func New(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey
 	}
 	return fb, nil
 
+}
+
+func (self *Flashbot) Endpoint() Endpoint {
+	return self.endpoint
 }
 
 func (self *Flashbot) PrvKeySend() *ecdsa.PrivateKey {
@@ -272,7 +228,7 @@ func (self *Flashbot) SendBundle(
 	txsHex []string,
 	blockNumber uint64,
 	timeout time.Duration,
-) (*Response, error) {
+) (*ResponseSend, error) {
 	r := RequestSend
 
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
@@ -283,9 +239,9 @@ func (self *Flashbot) SendBundle(
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
 
-	rr, err := parseResp(resp, blockNumber)
+	rr, err := parseRespSend(resp, blockNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.url)
+		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.endpoint.URL)
 	}
 
 	return rr, nil
@@ -294,7 +250,10 @@ func (self *Flashbot) SendBundle(
 func (self *Flashbot) CallBundle(
 	txsHex []string,
 	timeout time.Duration,
-) (*Response, error) {
+) (*ResponseCall, error) {
+	if !self.endpoint.SupportsSimulation {
+		return nil, errors.Errorf("doesn't support simulations relay:%v", self.endpoint.URL)
+	}
 	r := RequestCall
 
 	blockDummy := uint64(100000000000000)
@@ -307,9 +266,9 @@ func (self *Flashbot) CallBundle(
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
 
-	rr, err := parseResp(resp, blockDummy)
+	rr, err := parseRespCall(resp, blockDummy)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.url)
+		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.endpoint.URL)
 	}
 
 	return rr, nil
@@ -344,8 +303,35 @@ func (self *Flashbot) GetBundleStats(
 
 }
 
-func parseResp(resp []byte, blockNum uint64) (*Response, error) {
-	rr := &Response{
+func parseRespSend(resp []byte, blockNum uint64) (*ResponseSend, error) {
+	rrS := &ResponseSend{}
+	rrC := &ResponseCall{}
+
+	err := json.Unmarshal(resp, rrS)
+	if err != nil {
+		// Flashbot response is weird and sends different json structs.
+		// Refactor when the flashbot team answers this issue https://github.com/flashbots/mev-relay-js/issues/66
+		errC := json.Unmarshal(resp, rrC)
+		if errC != nil {
+			err := multierror.Append(err, errC)
+			return nil, errors.Wrapf(err, "unmarshal flashbot call response:%v", string(resp))
+		}
+	}
+
+	if rrS.Error.Code != 0 {
+		errStr := fmt.Sprintf("flashbot request returned an error:%+v,%v block:%v", rrS.Error, rrS.Message, blockNum)
+		return nil, errors.New(errStr)
+	}
+	if rrC.Error.Code != 0 {
+		errStr := fmt.Sprintf("flashbot request returned an error:%+v,%v block:%v", rrC.Error, rrC.Message, blockNum)
+		return nil, errors.New(errStr)
+	}
+
+	return rrS, nil
+}
+
+func parseRespCall(resp []byte, blockNum uint64) (*ResponseCall, error) {
+	rr := &ResponseCall{
 		Result: Result{},
 	}
 
@@ -371,7 +357,7 @@ func (self *Flashbot) req(r Request, prvKey *ecdsa.PrivateKey, pubKey *common.Ad
 		return nil, errors.Wrap(err, "marshaling flashbot tx params")
 	}
 
-	req, err := http.NewRequest("POST", self.url, bytes.NewBuffer(payload))
+	req, err := http.NewRequest("POST", self.endpoint.URL, bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, errors.Wrap(err, "creatting flashbot request")
 	}
