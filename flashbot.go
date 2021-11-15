@@ -238,7 +238,7 @@ func (self *Flashbot) SendBundle(
 
 	rr, err := parseRespSend(resp, blockNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.endpoint.URL)
+		return nil, err
 	}
 
 	return rr, nil
@@ -265,7 +265,7 @@ func (self *Flashbot) CallBundle(
 
 	rr, err := parseRespCall(resp, blockDummy)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing reply from url:%v", self.endpoint.URL)
+		return nil, err
 	}
 
 	return rr, nil
