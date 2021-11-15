@@ -116,7 +116,6 @@ var RequestBundleStats = Request{
 }
 
 type Flashbot struct {
-	netID         int64
 	prvKeySend    *ecdsa.PrivateKey
 	prvKeyCall    *ecdsa.PrivateKey
 	publicKeySend *common.Address
@@ -137,13 +136,21 @@ type Flashboter interface {
 	Endpoint() Endpoint
 }
 
-func NewAll(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey) ([]Flashboter, error) {
-	var endpoints []Endpoint
+func DefaultEndpoint(netID int64) (*Endpoint, error) {
 	url, err := relayURLDefault(netID)
 	if err != nil {
 		return nil, err
 	}
-	endpoints = append(endpoints, Endpoint{URL: url, SupportsSimulation: true})
+	return &Endpoint{URL: url, SupportsSimulation: true}, nil
+}
+
+func NewAll(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey) ([]Flashboter, error) {
+	var endpoints []Endpoint
+	ep, err := DefaultEndpoint(netID)
+	if err != nil {
+		return nil, errors.Wrap(err, "create default endpoint")
+	}
+	endpoints = append(endpoints, *ep)
 
 	switch netID {
 	case 1:
@@ -159,7 +166,7 @@ func NewMulti(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey, endpoints .
 	}
 	var flashbots []Flashboter
 	for _, endpoint := range endpoints {
-		f, err := New(netID, prvKeyCall, prvKeySend, endpoint)
+		f, err := New(prvKeyCall, prvKeySend, endpoint)
 		if err != nil {
 			return nil, errors.Wrapf(err, "create flashbot instance:%v", endpoint.URL)
 		}
@@ -168,17 +175,8 @@ func NewMulti(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey, endpoints .
 	return flashbots, nil
 }
 
-func New(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, endpoint Endpoint) (Flashboter, error) {
-	var err error
-	if endpoint.URL == "" {
-		endpoint.URL, err = relayURLDefault(netID)
-		if err != nil {
-			return nil, errors.Wrap(err, "get flashbot relay url")
-		}
-	}
-
+func New(prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, endpoint Endpoint) (Flashboter, error) {
 	fb := &Flashbot{
-		netID:    netID,
 		endpoint: endpoint,
 	}
 
@@ -186,7 +184,6 @@ func New(netID int64, prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey
 		return fb, fb.SetKeys(prvKeyCall, prvKeySend)
 	}
 	return fb, nil
-
 }
 
 func (self *Flashbot) Endpoint() Endpoint {
