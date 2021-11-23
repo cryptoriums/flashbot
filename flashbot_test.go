@@ -98,7 +98,7 @@ func Example() {
 
 	level.Info(logger).Log("msg", "pub key for send", "addr", pubKeyC.Hex())
 
-	flashbot, err := New(netID.Int64(), privKeyC, privKeyS, Endpoint{URL: "", SupportsSimulation: true})
+	flashbot, err := New(privKeyC, privKeyS, Endpoint{URL: "", SupportsSimulation: true})
 	ExitOnError(logger, err)
 
 	nonce, err := client.NonceAt(ctx, *pubKeyC, nil)
