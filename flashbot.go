@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 )
 
@@ -78,14 +77,9 @@ type Error struct {
 	Message string
 }
 
-type ResponseCall struct {
+type Response struct {
 	Error  `json:"error,omitempty"`
 	Result `json:"result,omitempty"`
-}
-
-type ResponseSend struct {
-	Result bool `json:"result,omitempty"`
-	Error  `json:"error,omitempty"`
 }
 
 var RequestSend = Request{
@@ -130,8 +124,8 @@ type Endpoint struct {
 }
 
 type Flashboter interface {
-	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*ResponseSend, error)
-	CallBundle(txsHex []string, timeout time.Duration) (*ResponseCall, error)
+	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*Response, error)
+	CallBundle(txsHex []string, timeout time.Duration) (*Response, error)
 	Endpoint() Endpoint
 }
 
@@ -212,7 +206,7 @@ func (self *Flashbot) SendBundle(
 	txsHex []string,
 	blockNumber uint64,
 	timeout time.Duration,
-) (*ResponseSend, error) {
+) (*Response, error) {
 	r := RequestSend
 
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
@@ -223,7 +217,7 @@ func (self *Flashbot) SendBundle(
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
 
-	rr, err := parseRespSend(resp, blockNumber)
+	rr, err := parseResp(resp, blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +228,7 @@ func (self *Flashbot) SendBundle(
 func (self *Flashbot) CallBundle(
 	txsHex []string,
 	timeout time.Duration,
-) (*ResponseCall, error) {
+) (*Response, error) {
 	if !self.endpoint.SupportsSimulation {
 		return nil, errors.Errorf("doesn't support simulations relay:%v", self.endpoint.URL)
 	}
@@ -250,7 +244,7 @@ func (self *Flashbot) CallBundle(
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
 
-	rr, err := parseRespCall(resp, blockDummy)
+	rr, err := parseResp(resp, blockDummy)
 	if err != nil {
 		return nil, err
 	}
@@ -287,41 +281,14 @@ func (self *Flashbot) GetBundleStats(
 
 }
 
-func parseRespSend(resp []byte, blockNum uint64) (*ResponseSend, error) {
-	rrS := &ResponseSend{}
-	rrC := &ResponseCall{}
-
-	err := json.Unmarshal(resp, rrS)
-	if err != nil {
-		// Flashbot response is weird and sends different json structs.
-		// Refactor when the flashbot team answers this issue https://github.com/flashbots/mev-relay-js/issues/66
-		errC := json.Unmarshal(resp, rrC)
-		if errC != nil {
-			err := multierror.Append(err, errC)
-			return nil, errors.Wrapf(err, "unmarshal flashbot call response:%v", string(resp))
-		}
-	}
-
-	if rrS.Error.Code != 0 {
-		errStr := fmt.Sprintf("flashbot request returned an error:%+v,%v block:%v", rrS.Error, rrS.Message, blockNum)
-		return nil, errors.New(errStr)
-	}
-	if rrC.Error.Code != 0 {
-		errStr := fmt.Sprintf("flashbot request returned an error:%+v,%v block:%v", rrC.Error, rrC.Message, blockNum)
-		return nil, errors.New(errStr)
-	}
-
-	return rrS, nil
-}
-
-func parseRespCall(resp []byte, blockNum uint64) (*ResponseCall, error) {
-	rr := &ResponseCall{
+func parseResp(resp []byte, blockNum uint64) (*Response, error) {
+	rr := &Response{
 		Result: Result{},
 	}
 
 	err := json.Unmarshal(resp, rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unmarshal flashbot call response:%v", string(resp))
+		return nil, errors.Wrapf(err, "unmarshal flashbot response:%v", string(resp))
 	}
 
 	if rr.Error.Code != 0 || (len(rr.Result.Results) > 0 && rr.Result.Results[0].Error != "") {
