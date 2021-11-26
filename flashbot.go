@@ -116,10 +116,9 @@ var RequestBundleStats = Request{
 }
 
 type Flashbot struct {
-	prvKeySend    *ecdsa.PrivateKey
-	prvKeyCall    *ecdsa.PrivateKey
-	publicKeySend *common.Address
-	publicKeyCall *common.Address
+	prvKey *ecdsa.PrivateKey
+	pubKey *common.Address
+
 	// url for the relay, when not set it uses the default flashbot url.
 	// Making it configurable allows using custom relays (i.e. ethermine).
 	endpoint Endpoint
@@ -144,7 +143,7 @@ func DefaultEndpoint(netID int64) (*Endpoint, error) {
 	return &Endpoint{URL: url, SupportsSimulation: true}, nil
 }
 
-func NewAll(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey) ([]Flashboter, error) {
+func NewAll(netID int64, prvKey *ecdsa.PrivateKey) ([]Flashboter, error) {
 	var endpoints []Endpoint
 	ep, err := DefaultEndpoint(netID)
 	if err != nil {
@@ -157,16 +156,16 @@ func NewAll(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey) ([]Flashboter
 		endpoints = append(endpoints, Endpoint{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
 		endpoints = append(endpoints, Endpoint{URL: "https://mev-relay.ethermine.org", SupportsSimulation: false})
 	}
-	return NewMulti(netID, prvKeyCall, prvKeySend, endpoints...)
+	return NewMulti(netID, prvKey, endpoints...)
 }
 
-func NewMulti(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey, endpoints ...Endpoint) ([]Flashboter, error) {
+func NewMulti(netID int64, prvKey *ecdsa.PrivateKey, endpoints ...Endpoint) ([]Flashboter, error) {
 	if len(endpoints) < 1 {
 		return nil, errors.New("should provide at least one endpoint")
 	}
 	var flashbots []Flashboter
 	for _, endpoint := range endpoints {
-		f, err := New(prvKeyCall, prvKeySend, endpoint)
+		f, err := New(prvKey, endpoint)
 		if err != nil {
 			return nil, errors.Wrapf(err, "create flashbot instance:%v", endpoint.URL)
 		}
@@ -175,13 +174,16 @@ func NewMulti(netID int64, prvKeyCall, prvKeySend *ecdsa.PrivateKey, endpoints .
 	return flashbots, nil
 }
 
-func New(prvKeyCall *ecdsa.PrivateKey, prvKeySend *ecdsa.PrivateKey, endpoint Endpoint) (Flashboter, error) {
+func New(prvKey *ecdsa.PrivateKey, endpoint Endpoint) (Flashboter, error) {
+	if endpoint == (Endpoint{}) {
+		return nil, errors.New("endpoint can't be empty")
+	}
 	fb := &Flashbot{
 		endpoint: endpoint,
 	}
 
-	if prvKeyCall != nil && prvKeySend != nil {
-		return fb, fb.SetKeys(prvKeyCall, prvKeySend)
+	if prvKey != nil {
+		return fb, fb.SetKey(prvKey)
 	}
 	return fb, nil
 }
@@ -190,33 +192,18 @@ func (self *Flashbot) Endpoint() Endpoint {
 	return self.endpoint
 }
 
-func (self *Flashbot) PrvKeySend() *ecdsa.PrivateKey {
-	return self.prvKeySend
+func (self *Flashbot) PrvKey() *ecdsa.PrivateKey {
+	return self.prvKey
 }
 
-func (self *Flashbot) PrvKeyCall() *ecdsa.PrivateKey {
-	return self.prvKeyCall
-}
-
-func (self *Flashbot) SetKeys(prvKeyCall, prvKeySend *ecdsa.PrivateKey) error {
-	publicKey := prvKeyCall.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+func (self *Flashbot) SetKey(prvKey *ecdsa.PrivateKey) error {
+	self.prvKey = prvKey
+	pubKeyE, ok := prvKey.Public().(*ecdsa.PublicKey)
 	if !ok {
 		return errors.New("casting private key to ECDSA")
 	}
-	publicKeyA := crypto.PubkeyToAddress(*publicKeyECDSA)
-	self.prvKeyCall = prvKeyCall
-	self.publicKeyCall = &publicKeyA
-
-	publicKey = prvKeySend.Public()
-	publicKeyECDSA, ok = publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return errors.New("casting private key to ECDSA")
-	}
-
-	publicKeyA = crypto.PubkeyToAddress(*publicKeyECDSA)
-	self.prvKeySend = prvKeySend
-	self.publicKeySend = &publicKeyA
+	pubKey := crypto.PubkeyToAddress(*pubKeyE)
+	self.pubKey = &pubKey
 
 	return nil
 }
@@ -231,7 +218,7 @@ func (self *Flashbot) SendBundle(
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 	r.Params[0].Txs = txsHex
 
-	resp, err := self.req(r, self.prvKeySend, self.publicKeySend, timeout)
+	resp, err := self.req(r, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
@@ -258,7 +245,7 @@ func (self *Flashbot) CallBundle(
 	r.Params[0].Txs = txsHex
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockDummy)
 
-	resp, err := self.req(r, self.prvKeyCall, self.publicKeyCall, timeout)
+	resp, err := self.req(r, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
@@ -280,9 +267,9 @@ func (self *Flashbot) GetBundleStats(
 	r.Params[0].BundleHash = bundleHash
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 
-	resp, err := self.req(r, self.prvKeyCall, self.publicKeyCall, timeout)
+	resp, err := self.req(r, timeout)
 	if err != nil {
-		return nil, errors.Wrap(err, "flashbot call request")
+		return nil, errors.Wrap(err, "flashbot stats request")
 	}
 
 	rr := &ResultBundleStats{}
@@ -348,7 +335,7 @@ func parseRespCall(resp []byte, blockNum uint64) (*ResponseCall, error) {
 	return rr, nil
 }
 
-func (self *Flashbot) req(r Request, prvKey *ecdsa.PrivateKey, pubKey *common.Address, timeout time.Duration) ([]byte, error) {
+func (self *Flashbot) req(r Request, timeout time.Duration) ([]byte, error) {
 	payload, err := json.Marshal(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "marshaling flashbot tx params")
@@ -358,7 +345,7 @@ func (self *Flashbot) req(r Request, prvKey *ecdsa.PrivateKey, pubKey *common.Ad
 	if err != nil {
 		return nil, errors.Wrap(err, "creatting flashbot request")
 	}
-	signedP, err := signPayload(payload, prvKey, pubKey)
+	signedP, err := signPayload(payload, self.prvKey, self.pubKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "signing flashbot request")
 	}

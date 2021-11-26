@@ -88,20 +88,18 @@ func Example() {
 	ExitOnError(logger, err)
 	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", nodeURL)
 
-	privKeyC, pubKeyC, err := GetKey("ETH_PRIVATE_KEY_CALL")
+	privKey, pubKey, err := GetKey("ETH_PRIVATE_KEY")
 	ExitOnError(logger, err)
 
-	level.Info(logger).Log("msg", "pub key for call", "addr", pubKeyC.Hex())
+	level.Info(logger).Log("msg", "pub key for", "addr", pubKey.Hex())
 
-	privKeyS, pubKeyS, err := GetKey("ETH_PRIVATE_KEY_SEND")
+	endpoint, err := DefaultEndpoint(netID.Int64())
 	ExitOnError(logger, err)
 
-	level.Info(logger).Log("msg", "pub key for send", "addr", pubKeyC.Hex())
-
-	flashbot, err := New(privKeyC, privKeyS, Endpoint{URL: "", SupportsSimulation: true})
+	flashbot, err := New(privKey, *endpoint)
 	ExitOnError(logger, err)
 
-	nonce, err := client.NonceAt(ctx, *pubKeyC, nil)
+	nonce, err := client.NonceAt(ctx, *pubKey, nil)
 	ExitOnError(logger, err)
 
 	abiP, err := abi.JSON(strings.NewReader(ContractABI))
@@ -128,7 +126,7 @@ func Example() {
 			big.NewInt(0),
 			addr,
 			nonce,
-			privKeyC,
+			privKey,
 		)
 		ExitOnError(logger, err)
 		level.Info(logger).Log("msg", "created call transaction", "hash", tx.Hash())
@@ -148,7 +146,7 @@ func Example() {
 	{
 		blockNumber, err := client.BlockNumber(ctx)
 		ExitOnError(logger, err)
-		nonce, err = client.NonceAt(ctx, *pubKeyS, nil)
+		nonce, err = client.NonceAt(ctx, *pubKey, nil)
 		ExitOnError(logger, err)
 
 		txHex, tx, err := NewSignedTX(
@@ -159,7 +157,7 @@ func Example() {
 			big.NewInt(0),
 			addr,
 			nonce,
-			privKeyS,
+			privKey,
 		)
 		ExitOnError(logger, err)
 		level.Info(logger).Log("msg", "created send transaction", "hash", tx.Hash())
