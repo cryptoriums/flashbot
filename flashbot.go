@@ -121,6 +121,7 @@ type Flashbot struct {
 type Endpoint struct {
 	URL                string
 	SupportsSimulation bool
+	Method             string
 }
 
 type Flashboter interface {
@@ -233,6 +234,10 @@ func (self *Flashbot) CallBundle(
 		return nil, errors.Errorf("doesn't support simulations relay:%v", self.endpoint.URL)
 	}
 	r := RequestCall
+
+	if self.endpoint.Method != "" {
+		r.Method = self.endpoint.Method
+	}
 
 	blockDummy := uint64(100000000000000)
 
