@@ -7,6 +7,7 @@ package flashbot
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -26,7 +27,7 @@ type Flashboter interface {
 	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*Response, error)
 	CallBundle(txsHex []string, timeout time.Duration) (*Response, error)
 	GetBundleStats(bundleHash string, blockNumber uint64, timeout time.Duration) (*ResultBundleStats, error)
-	Endpoint() Endpoint
+	Endpoint() *Endpoint
 }
 
 type Params struct {
@@ -122,7 +123,7 @@ type Flashbot struct {
 
 	// url for the relay, when not set it uses the default flashbot url.
 	// Making it configurable allows using custom relays (i.e. ethermine).
-	endpoint Endpoint
+	endpoint *Endpoint
 }
 
 type Endpoint struct {
@@ -130,6 +131,7 @@ type Endpoint struct {
 	SupportsSimulation bool
 	MethodCall         string
 	MethodSend         string
+	CustomHeaders      map[string]string
 }
 
 func DefaultEndpoint(netID int64) (*Endpoint, error) {
@@ -141,22 +143,22 @@ func DefaultEndpoint(netID int64) (*Endpoint, error) {
 }
 
 func NewAll(netID int64, prvKey *ecdsa.PrivateKey) ([]Flashboter, error) {
-	var endpoints []Endpoint
+	var endpoints []*Endpoint
 	ep, err := DefaultEndpoint(netID)
 	if err != nil {
 		return nil, errors.Wrap(err, "create default endpoint")
 	}
-	endpoints = append(endpoints, *ep)
+	endpoints = append(endpoints, ep)
 
 	switch netID {
 	case 1:
-		endpoints = append(endpoints, Endpoint{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
-		endpoints = append(endpoints, Endpoint{URL: "https://mev-relay.ethermine.org", SupportsSimulation: false})
+		endpoints = append(endpoints, &Endpoint{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
+		endpoints = append(endpoints, &Endpoint{URL: "https://mev-relay.ethermine.org", SupportsSimulation: false})
 	}
 	return NewMulti(netID, prvKey, endpoints...)
 }
 
-func NewMulti(netID int64, prvKey *ecdsa.PrivateKey, endpoints ...Endpoint) ([]Flashboter, error) {
+func NewMulti(netID int64, prvKey *ecdsa.PrivateKey, endpoints ...*Endpoint) ([]Flashboter, error) {
 	if len(endpoints) < 1 {
 		return nil, errors.New("should provide at least one endpoint")
 	}
@@ -171,8 +173,8 @@ func NewMulti(netID int64, prvKey *ecdsa.PrivateKey, endpoints ...Endpoint) ([]F
 	return flashbots, nil
 }
 
-func New(prvKey *ecdsa.PrivateKey, endpoint Endpoint) (Flashboter, error) {
-	if endpoint == (Endpoint{}) {
+func New(prvKey *ecdsa.PrivateKey, endpoint *Endpoint) (Flashboter, error) {
+	if endpoint == nil {
 		return nil, errors.New("endpoint can't be empty")
 	}
 	fb := &Flashbot{
@@ -185,7 +187,7 @@ func New(prvKey *ecdsa.PrivateKey, endpoint Endpoint) (Flashboter, error) {
 	return fb, nil
 }
 
-func (self *Flashbot) Endpoint() Endpoint {
+func (self *Flashbot) Endpoint() *Endpoint {
 	return self.endpoint
 }
 
@@ -331,7 +333,14 @@ func (self *Flashbot) req(r Request, timeout time.Duration) ([]byte, error) {
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("X-Flashbots-Signature", signedP)
 
+	for n, v := range self.endpoint.CustomHeaders {
+		req.Header.Add(n, v)
+	}
+
 	mevHTTPClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 		Timeout: timeout,
 	}
 	resp, err := mevHTTPClient.Do(req)

@@ -96,7 +96,7 @@ func Example() {
 	endpoint, err := DefaultEndpoint(netID.Int64())
 	ExitOnError(logger, err)
 
-	flashbot, err := New(privKey, *endpoint)
+	flashbot, err := New(privKey, endpoint)
 	ExitOnError(logger, err)
 
 	nonce, err := client.NonceAt(ctx, *pubKey, nil)
