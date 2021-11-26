@@ -28,6 +28,7 @@ type Flashboter interface {
 	GetBundleStats(bundleHash string, blockNumber uint64, timeout time.Duration) (*ResultBundleStats, error)
 	Endpoint() Endpoint
 }
+
 type Params struct {
 	Txs              []string `json:"txs,omitempty"`
 	BlockNumber      string   `json:"blockNumber,omitempty"`
@@ -127,13 +128,8 @@ type Flashbot struct {
 type Endpoint struct {
 	URL                string
 	SupportsSimulation bool
-	Method             string
-}
-
-type Flashboter interface {
-	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*Response, error)
-	CallBundle(txsHex []string, timeout time.Duration) (*Response, error)
-	Endpoint() Endpoint
+	MethodCall         string
+	MethodSend         string
 }
 
 func DefaultEndpoint(netID int64) (*Endpoint, error) {
@@ -216,6 +212,10 @@ func (self *Flashbot) SendBundle(
 ) (*Response, error) {
 	r := RequestSend
 
+	if self.endpoint.MethodSend != "" {
+		r.Method = self.endpoint.MethodSend
+	}
+
 	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 	r.Params[0].Txs = txsHex
 
@@ -241,8 +241,8 @@ func (self *Flashbot) CallBundle(
 	}
 	r := RequestCall
 
-	if self.endpoint.Method != "" {
-		r.Method = self.endpoint.Method
+	if self.endpoint.MethodCall != "" {
+		r.Method = self.endpoint.MethodCall
 	}
 
 	blockDummy := uint64(100000000000000)
