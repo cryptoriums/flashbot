@@ -22,6 +22,12 @@ import (
 	"github.com/pkg/errors"
 )
 
+type Flashboter interface {
+	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*Response, error)
+	CallBundle(txsHex []string, timeout time.Duration) (*Response, error)
+	GetBundleStats(bundleHash string, blockNumber uint64, timeout time.Duration) (*ResultBundleStats, error)
+	Endpoint() Endpoint
+}
 type Params struct {
 	Txs              []string `json:"txs,omitempty"`
 	BlockNumber      string   `json:"blockNumber,omitempty"`
