@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cryptoriums/telliot/pkg/private_file"
+	"github.com/cryptoriums/packages/private_file"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -44,7 +44,7 @@ func init() {
 	logger = log.With(
 		log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
 		"ts", log.TimestampFormat(func() time.Time { return time.Now().UTC() }, "jan 02 15:04:05.00"),
-		"caller", log.Caller(5),
+		"caller", log.Caller(4),
 	)
 
 	env, err := ioutil.ReadFile(".env")
@@ -54,7 +54,10 @@ func init() {
 	ExitOnError(logger, err)
 	if !util.IsText(env) {
 		level.Info(logger).Log("msg", "env file is encrypted")
-		env = private_file.DecryptWithPasswordLoop(env)
+		env, err = private_file.DecryptWithPasswordLoop(env)
+		if err != nil {
+			ExitOnError(logger, err)
+		}
 	}
 
 	rr := bytes.NewReader(env)
@@ -162,7 +165,7 @@ func Example() {
 		ExitOnError(logger, err)
 		level.Info(logger).Log("msg", "created send transaction", "hash", tx.Hash())
 
-		var resp *Response
+		var resp *ResponseSend
 		for i := uint64(1); i < blockNumMax; i++ {
 			resp, err = flashbot.SendBundle(
 				[]string{txHex},
