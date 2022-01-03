@@ -112,9 +112,7 @@ var RequestBundleStats = Request{
 	Jsonrpc: "2.0",
 	Id:      1,
 	Method:  "flashbots_getBundleStats",
-	Params: []Params{
-		{},
-	},
+	Params:  []Params{{}},
 }
 
 type Flashbot struct {
@@ -154,6 +152,7 @@ func NewAll(netID int64, prvKey *ecdsa.PrivateKey) ([]Flashboter, error) {
 	case 1:
 		endpoints = append(endpoints, &Endpoint{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
 		endpoints = append(endpoints, &Endpoint{URL: "https://mev-relay.ethermine.org", SupportsSimulation: false})
+		endpoints = append(endpoints, &Endpoint{URL: "https://bundle.miningdao.io", SupportsSimulation: false})
 	}
 	return NewMulti(netID, prvKey, endpoints...)
 }
