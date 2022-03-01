@@ -165,7 +165,7 @@ func Example() {
 		ExitOnError(logger, err)
 		level.Info(logger).Log("msg", "created send transaction", "hash", tx.Hash())
 
-		var resp *ResponseSend
+		var resp *Response
 		for i := uint64(1); i < blockNumMax; i++ {
 			resp, err = flashbot.SendBundle(
 				[]string{txHex},
