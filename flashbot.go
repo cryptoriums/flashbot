@@ -6,6 +6,7 @@ package flashbot
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/tls"
 	"encoding/json"
@@ -24,24 +25,37 @@ import (
 )
 
 type Flashboter interface {
-	SendBundle(txsHex []string, blockNumber uint64, timeout time.Duration) (*Response, error)
-	CallBundle(txsHex []string, timeout time.Duration) (*Response, error)
-	GetBundleStats(bundleHash string, blockNumber uint64, timeout time.Duration) (*ResultBundleStats, error)
-	Endpoint() *Endpoint
+	SendBundle(ctx context.Context, txsHex []string, blockNumber uint64) (*Response, error)
+	CallBundle(ctx context.Context, txsHex []string) (*Response, error)
+	GetBundleStats(ctx context.Context, bundleHash string, blockNumber uint64) (*ResultBundleStats, error)
+	EstimateGasBundle(ctx context.Context, txs []Tx, blockNumber uint64) (*Response, error)
+	Api() *Api
 }
 
 type Params struct {
-	Txs              []string `json:"txs,omitempty"`
-	BlockNumber      string   `json:"blockNumber,omitempty"`
-	StateBlockNumber string   `json:"stateBlockNumber,omitempty"`
-	BundleHash       string   `json:"bundleHash,omitempty"`
+	BlockNumber      string `json:"blockNumber,omitempty"`
+	StateBlockNumber string `json:"stateBlockNumber,omitempty"`
 }
 
-type Request struct {
-	Jsonrpc string   `json:"jsonrpc,omitempty"`
-	Id      int      `json:"id,omitempty"`
-	Method  string   `json:"method,omitempty"`
-	Params  []Params `json:"params,omitempty"`
+type ParamsSendCall struct {
+	Params
+	Txs []string `json:"txs,omitempty"`
+}
+
+type ParamsStats struct {
+	Params
+	BundleHash string `json:"bundleHash,omitempty"`
+}
+
+type Tx struct {
+	From common.Address `json:"from,omitempty"`
+	To   common.Address `json:"to,omitempty"`
+	Data []byte         `json:"data,omitempty"`
+}
+
+type ParamsGasEstimate struct {
+	Params
+	Txs []Tx `json:"txs,omitempty"`
 }
 
 type Metadata struct {
@@ -90,41 +104,16 @@ type Response struct {
 	Result `json:"result,omitempty"`
 }
 
-var RequestSend = Request{
-	Jsonrpc: "2.0",
-	Id:      1,
-	Method:  "eth_sendBundle",
-	Params:  []Params{{}},
-}
-
-var RequestCall = Request{
-	Jsonrpc: "2.0",
-	Id:      1,
-	Method:  "eth_callBundle",
-	Params: []Params{
-		{
-			StateBlockNumber: "latest",
-		},
-	},
-}
-
-var RequestBundleStats = Request{
-	Jsonrpc: "2.0",
-	Id:      1,
-	Method:  "flashbots_getBundleStats",
-	Params:  []Params{{}},
-}
-
 type Flashbot struct {
 	prvKey *ecdsa.PrivateKey
 	pubKey *common.Address
 
-	// url for the relay, when not set it uses the default flashbot url.
-	// Making it configurable allows using custom relays (i.e. ethermine).
-	endpoint *Endpoint
+	// The api spec for the relay.
+	// Different relays use different api method names and this allows making it configurable.
+	api *Api
 }
 
-type Endpoint struct {
+type Api struct {
 	URL                string
 	SupportsSimulation bool
 	MethodCall         string
@@ -132,52 +121,53 @@ type Endpoint struct {
 	CustomHeaders      map[string]string
 }
 
-func DefaultEndpoint(netID int64) (*Endpoint, error) {
+func DefaultApi(netID int64) (*Api, error) {
 	url, err := relayURLDefault(netID)
 	if err != nil {
 		return nil, err
 	}
-	return &Endpoint{URL: url, SupportsSimulation: true}, nil
+	return &Api{URL: url, SupportsSimulation: true}, nil
 }
 
 func NewAll(netID int64, prvKey *ecdsa.PrivateKey) ([]Flashboter, error) {
-	var endpoints []*Endpoint
-	ep, err := DefaultEndpoint(netID)
+	var apis []*Api
+	ep, err := DefaultApi(netID)
 	if err != nil {
-		return nil, errors.Wrap(err, "create default endpoint")
+		return nil, errors.Wrap(err, "create default api")
 	}
-	endpoints = append(endpoints, ep)
+	apis = append(apis, ep)
 
 	switch netID {
 	case 1:
-		endpoints = append(endpoints, &Endpoint{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
-		endpoints = append(endpoints, &Endpoint{URL: "https://mev-relay.ethermine.org", SupportsSimulation: false})
-		endpoints = append(endpoints, &Endpoint{URL: "https://bundle.miningdao.io", SupportsSimulation: false})
+		apis = append(apis, &Api{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
+		apis = append(apis, &Api{URL: "https://mev-relay.ethermine.org", SupportsSimulation: false})
+		apis = append(apis, &Api{URL: "https://bundle.miningdao.io", SupportsSimulation: false})
 	}
-	return NewMulti(netID, prvKey, endpoints...)
+	return NewMulti(netID, prvKey, apis...)
 }
 
-func NewMulti(netID int64, prvKey *ecdsa.PrivateKey, endpoints ...*Endpoint) ([]Flashboter, error) {
-	if len(endpoints) < 1 {
-		return nil, errors.New("should provide at least one endpoint")
+func NewMulti(netID int64, prvKey *ecdsa.PrivateKey, apis ...*Api) ([]Flashboter, error) {
+	if len(apis) < 1 {
+		return nil, errors.New("should provide at least one api")
 	}
 	var flashbots []Flashboter
-	for _, endpoint := range endpoints {
-		f, err := New(prvKey, endpoint)
+	for _, api := range apis {
+		f, err := New(prvKey, api)
 		if err != nil {
-			return nil, errors.Wrapf(err, "create flashbot instance:%v", endpoint.URL)
+			return nil, errors.Wrapf(err, "create flashbot instance:%v", api.URL)
 		}
 		flashbots = append(flashbots, f)
 	}
 	return flashbots, nil
 }
 
-func New(prvKey *ecdsa.PrivateKey, endpoint *Endpoint) (Flashboter, error) {
-	if endpoint == nil {
-		return nil, errors.New("endpoint can't be empty")
+func New(prvKey *ecdsa.PrivateKey, api *Api) (Flashboter, error) {
+	if api == nil {
+		return nil, errors.New("api can't be empty")
 	}
+
 	fb := &Flashbot{
-		endpoint: endpoint,
+		api: api,
 	}
 
 	if prvKey != nil {
@@ -186,8 +176,8 @@ func New(prvKey *ecdsa.PrivateKey, endpoint *Endpoint) (Flashboter, error) {
 	return fb, nil
 }
 
-func (self *Flashbot) Endpoint() *Endpoint {
-	return self.endpoint
+func (self *Flashbot) Api() *Api {
+	return self.api
 }
 
 func (self *Flashbot) PrvKey() *ecdsa.PrivateKey {
@@ -207,20 +197,24 @@ func (self *Flashbot) SetKey(prvKey *ecdsa.PrivateKey) error {
 }
 
 func (self *Flashbot) SendBundle(
+	ctx context.Context,
 	txsHex []string,
 	blockNumber uint64,
-	timeout time.Duration,
 ) (*Response, error) {
-	r := RequestSend
-
-	if self.endpoint.MethodSend != "" {
-		r.Method = self.endpoint.MethodSend
+	method := "eth_sendBundle"
+	if self.api.MethodSend != "" {
+		method = self.api.MethodSend
 	}
 
-	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
-	r.Params[0].Txs = txsHex
+	param := ParamsSendCall{
+		Txs: txsHex,
+		Params: Params{
+			StateBlockNumber: "latest",
+			BlockNumber:      hexutil.EncodeUint64(blockNumber),
+		},
+	}
 
-	resp, err := self.req(r, timeout)
+	resp, err := self.req(ctx, method, param)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
@@ -234,24 +228,28 @@ func (self *Flashbot) SendBundle(
 }
 
 func (self *Flashbot) CallBundle(
+	ctx context.Context,
 	txsHex []string,
-	timeout time.Duration,
 ) (*Response, error) {
-	if !self.endpoint.SupportsSimulation {
-		return nil, errors.Errorf("doesn't support simulations relay:%v", self.endpoint.URL)
+	if !self.api.SupportsSimulation {
+		return nil, errors.Errorf("doesn't support simulations relay:%v", self.api.URL)
 	}
-	r := RequestCall
 
-	if self.endpoint.MethodCall != "" {
-		r.Method = self.endpoint.MethodCall
+	method := "eth_callBundle"
+	if self.api.MethodSend != "" {
+		method = self.api.MethodSend
 	}
 
 	blockDummy := uint64(100000000000000)
 
-	r.Params[0].Txs = txsHex
-	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockDummy)
+	param := ParamsSendCall{
+		Txs: txsHex,
+		Params: Params{
+			StateBlockNumber: "latest",
+			BlockNumber:      hexutil.EncodeUint64(blockDummy)},
+	}
 
-	resp, err := self.req(r, timeout)
+	resp, err := self.req(ctx, method, param)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot call request")
 	}
@@ -265,15 +263,17 @@ func (self *Flashbot) CallBundle(
 }
 
 func (self *Flashbot) GetBundleStats(
+	ctx context.Context,
 	bundleHash string,
 	blockNumber uint64,
-	timeout time.Duration,
 ) (*ResultBundleStats, error) {
-	r := RequestBundleStats
-	r.Params[0].BundleHash = bundleHash
-	r.Params[0].BlockNumber = hexutil.EncodeUint64(blockNumber)
 
-	resp, err := self.req(r, timeout)
+	param := ParamsStats{
+		BundleHash: bundleHash,
+		Params:     Params{BlockNumber: hexutil.EncodeUint64(blockNumber)},
+	}
+
+	resp, err := self.req(ctx, "flashbots_getBundleStats", param)
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot stats request")
 	}
@@ -314,13 +314,20 @@ func parseResp(resp []byte, blockNum uint64) (*Response, error) {
 	return rr, nil
 }
 
-func (self *Flashbot) req(r Request, timeout time.Duration) ([]byte, error) {
-	payload, err := json.Marshal(r)
+func (self *Flashbot) req(ctx context.Context, method string, params ...interface{}) ([]byte, error) {
+	msg, err := newMessage(method, params...)
 	if err != nil {
 		return nil, errors.Wrap(err, "marshaling flashbot tx params")
 	}
 
-	req, err := http.NewRequest("POST", self.endpoint.URL, bytes.NewBuffer(payload))
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	// return nil, errors.New("payload" + string(payload))
+
+	req, err := http.NewRequestWithContext(ctx, "POST", self.api.URL, ioutil.NopCloser(bytes.NewReader(payload)))
 	if err != nil {
 		return nil, errors.Wrap(err, "creatting flashbot request")
 	}
@@ -332,7 +339,7 @@ func (self *Flashbot) req(r Request, timeout time.Duration) ([]byte, error) {
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("X-Flashbots-Signature", signedP)
 
-	for n, v := range self.endpoint.CustomHeaders {
+	for n, v := range self.api.CustomHeaders {
 		req.Header.Add(n, v)
 	}
 
@@ -340,7 +347,6 @@ func (self *Flashbot) req(r Request, timeout time.Duration) ([]byte, error) {
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
-		Timeout: timeout,
 	}
 	resp, err := mevHTTPClient.Do(req)
 	if err != nil {
@@ -356,7 +362,7 @@ func (self *Flashbot) req(r Request, timeout time.Duration) ([]byte, error) {
 		if err != nil {
 			return nil, errors.Errorf("bad response status %v", resp.Status)
 		}
-		return nil, errors.Errorf("bad response resp status:%v  respBody:%v reqMethod:%+v", resp.Status, string(rbody)+string(res), r.Method)
+		return nil, errors.Errorf("bad response resp status:%v  respBody:%v reqMethod:%+v", resp.Status, string(rbody)+string(res), method)
 	}
 	err = resp.Body.Close()
 	if err != nil {
@@ -364,6 +370,34 @@ func (self *Flashbot) req(r Request, timeout time.Duration) ([]byte, error) {
 	}
 
 	return res, nil
+}
+
+// A value of this type can a JSON-RPC request, notification, successful response or
+// error response. Which one it is depends on the fields.
+type jsonrpcMessage struct {
+	Version string          `json:"jsonrpc,omitempty"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Error   *jsonError      `json:"error,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+}
+
+type jsonError struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+func newMessage(method string, paramsIn ...interface{}) (*jsonrpcMessage, error) {
+	msg := &jsonrpcMessage{Version: "2.0", ID: []byte(`1`), Method: method}
+	if paramsIn != nil { // prevent sending "params":null
+		var err error
+		if msg.Params, err = json.Marshal(paramsIn); err != nil {
+			return nil, err
+		}
+	}
+	return msg, nil
 }
 
 func NewSignedTXLegacy(

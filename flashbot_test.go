@@ -96,7 +96,7 @@ func Example() {
 
 	level.Info(logger).Log("msg", "pub key for", "addr", pubKey.Hex())
 
-	endpoint, err := DefaultEndpoint(netID.Int64())
+	endpoint, err := DefaultApi(netID.Int64())
 	ExitOnError(logger, err)
 
 	flashbot, err := New(privKey, endpoint)
@@ -135,8 +135,8 @@ func Example() {
 		level.Info(logger).Log("msg", "created call transaction", "hash", tx.Hash())
 
 		resp, err := flashbot.CallBundle(
+			ctx,
 			[]string{txHex},
-			5*time.Second,
 		)
 		ExitOnError(logger, err)
 
@@ -168,9 +168,9 @@ func Example() {
 		var resp *Response
 		for i := uint64(1); i < blockNumMax; i++ {
 			resp, err = flashbot.SendBundle(
+				ctx,
 				[]string{txHex},
 				blockNumber+i,
-				5*time.Second,
 			)
 			time.Sleep(100 * time.Millisecond)
 			ExitOnError(logger, err)
