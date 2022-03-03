@@ -196,6 +196,37 @@ func (self *Flashbot) SetKey(prvKey *ecdsa.PrivateKey) error {
 	return nil
 }
 
+func (self *Flashbot) EstimateGasBundle(
+	ctx context.Context,
+	txs []Tx,
+	blockNumber uint64,
+) (*Response, error) {
+	method := "eth_estimateGasBundle"
+	if self.api.MethodSend != "" {
+		method = self.api.MethodSend
+	}
+
+	param := ParamsGasEstimate{
+		Txs: txs,
+		Params: Params{
+			StateBlockNumber: "latest",
+			BlockNumber:      hexutil.EncodeUint64(blockNumber),
+		},
+	}
+
+	resp, err := self.req(ctx, method, param)
+	if err != nil {
+		return nil, errors.Wrap(err, "flashbot send request")
+	}
+
+	rr, err := parseResp(resp, blockNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	return rr, nil
+}
+
 func (self *Flashbot) SendBundle(
 	ctx context.Context,
 	txsHex []string,

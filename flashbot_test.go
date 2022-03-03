@@ -118,6 +118,28 @@ func Example() {
 	addr, err := GetContractAddress(netID)
 	ExitOnError(logger, err)
 
+	// // Make a call to estimate gas.
+	// {
+	// 	blockNumber, err := client.BlockNumber(ctx)
+	// 	ExitOnError(logger, err)
+	// 	resp, err := flashbot.EstimateGasBundle(
+	// 		ctx,
+	// 		[]Tx{
+	// 			{
+	// 				From: *pubKey,
+	// 				To:   common.HexToAddress(contractAddressMainnet),
+	// 				Data: data,
+	// 			},
+	// 		},
+	// 		blockNumber,
+	// 	)
+	// 	ExitOnError(logger, err)
+
+	// 	level.Info(logger).Log("msg", "Called Bundle",
+	// 		"respStruct", fmt.Sprintf("%+v", resp),
+	// 	)
+	// }
+
 	// Make a request to the Call endpoint for simulation.
 	{
 
