@@ -25,16 +25,16 @@ import (
 )
 
 type Flashboter interface {
-	SendBundle(ctx context.Context, txsHex []string, blockNumber uint64) (*Response, error)
-	CallBundle(ctx context.Context, txsHex []string) (*Response, error)
-	GetBundleStats(ctx context.Context, bundleHash string, blockNumber uint64) (*ResultBundleStats, error)
-	EstimateGasBundle(ctx context.Context, txs []Tx, blockNumber uint64) (*Response, error)
+	SendBundle(ctx context.Context, txsHex []string, blockNum uint64) (*Response, error)
+	CallBundle(ctx context.Context, txsHex []string, blockNumState uint64) (*Response, error)
+	GetBundleStats(ctx context.Context, bundleHash string, blockNum uint64) (*ResultBundleStats, error)
+	EstimateGasBundle(ctx context.Context, txs []Tx, blockNum uint64) (*Response, error)
 	Api() *Api
 }
 
 type Params struct {
-	BlockNumber      string `json:"blockNumber,omitempty"`
-	StateBlockNumber string `json:"stateBlockNumber,omitempty"`
+	BlockNum      string `json:"blockNumber,omitempty"`
+	StateBlockNum string `json:"stateBlockNumber,omitempty"`
 }
 
 type ParamsSendCall struct {
@@ -199,7 +199,7 @@ func (self *Flashbot) SetKey(prvKey *ecdsa.PrivateKey) error {
 func (self *Flashbot) EstimateGasBundle(
 	ctx context.Context,
 	txs []Tx,
-	blockNumber uint64,
+	blockNum uint64,
 ) (*Response, error) {
 	method := "eth_estimateGasBundle"
 	if self.api.MethodSend != "" {
@@ -209,8 +209,8 @@ func (self *Flashbot) EstimateGasBundle(
 	param := ParamsGasEstimate{
 		Txs: txs,
 		Params: Params{
-			StateBlockNumber: "latest",
-			BlockNumber:      hexutil.EncodeUint64(blockNumber),
+			StateBlockNum: "latest",
+			BlockNum:      hexutil.EncodeUint64(blockNum),
 		},
 	}
 
@@ -219,7 +219,7 @@ func (self *Flashbot) EstimateGasBundle(
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
 
-	rr, err := parseResp(resp, blockNumber)
+	rr, err := parseResp(resp, blockNum)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func (self *Flashbot) EstimateGasBundle(
 func (self *Flashbot) SendBundle(
 	ctx context.Context,
 	txsHex []string,
-	blockNumber uint64,
+	blockNum uint64,
 ) (*Response, error) {
 	method := "eth_sendBundle"
 	if self.api.MethodSend != "" {
@@ -240,8 +240,8 @@ func (self *Flashbot) SendBundle(
 	param := ParamsSendCall{
 		Txs: txsHex,
 		Params: Params{
-			StateBlockNumber: "latest",
-			BlockNumber:      hexutil.EncodeUint64(blockNumber),
+			StateBlockNum: "latest",
+			BlockNum:      hexutil.EncodeUint64(blockNum),
 		},
 	}
 
@@ -250,7 +250,7 @@ func (self *Flashbot) SendBundle(
 		return nil, errors.Wrap(err, "flashbot send request")
 	}
 
-	rr, err := parseResp(resp, blockNumber)
+	rr, err := parseResp(resp, blockNum)
 	if err != nil {
 		return nil, err
 	}
@@ -261,6 +261,7 @@ func (self *Flashbot) SendBundle(
 func (self *Flashbot) CallBundle(
 	ctx context.Context,
 	txsHex []string,
+	_blockNumState uint64,
 ) (*Response, error) {
 	if !self.api.SupportsSimulation {
 		return nil, errors.Errorf("doesn't support simulations relay:%v", self.api.URL)
@@ -272,12 +273,15 @@ func (self *Flashbot) CallBundle(
 	}
 
 	blockDummy := uint64(100000000000000)
-
+	blockNumState := "latest"
+	if _blockNumState != 0 {
+		blockNumState = hexutil.EncodeUint64(_blockNumState)
+	}
 	param := ParamsSendCall{
 		Txs: txsHex,
 		Params: Params{
-			StateBlockNumber: "latest",
-			BlockNumber:      hexutil.EncodeUint64(blockDummy)},
+			StateBlockNum: blockNumState,
+			BlockNum:      hexutil.EncodeUint64(blockDummy)},
 	}
 
 	resp, err := self.req(ctx, method, param)
@@ -296,12 +300,12 @@ func (self *Flashbot) CallBundle(
 func (self *Flashbot) GetBundleStats(
 	ctx context.Context,
 	bundleHash string,
-	blockNumber uint64,
+	blockNum uint64,
 ) (*ResultBundleStats, error) {
 
 	param := ParamsStats{
 		BundleHash: bundleHash,
-		Params:     Params{BlockNumber: hexutil.EncodeUint64(blockNumber)},
+		Params:     Params{BlockNum: hexutil.EncodeUint64(blockNum)},
 	}
 
 	resp, err := self.req(ctx, "flashbots_getBundleStats", param)

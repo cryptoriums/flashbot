@@ -159,6 +159,7 @@ func Example() {
 		resp, err := flashbot.CallBundle(
 			ctx,
 			[]string{txHex},
+			0,
 		)
 		ExitOnError(logger, err)
 
