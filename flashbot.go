@@ -12,14 +12,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"net/http"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 )
@@ -433,68 +431,6 @@ func newMessage(method string, paramsIn ...interface{}) (*jsonrpcMessage, error)
 		}
 	}
 	return msg, nil
-}
-
-func NewSignedTXLegacy(
-	netID int64,
-	data []byte,
-	gasLimit uint64,
-	gasPrice *big.Int,
-	to common.Address,
-	nonce uint64,
-	prvKey *ecdsa.PrivateKey,
-) (string, *types.Transaction, error) {
-	signer := types.LatestSignerForChainID(big.NewInt(netID))
-
-	tx, err := types.SignNewTx(prvKey, signer, &types.AccessListTx{
-		Gas:      gasLimit,
-		GasPrice: gasPrice,
-		To:       &to,
-		ChainID:  big.NewInt(netID),
-		Nonce:    nonce,
-		Data:     data,
-	})
-	if err != nil {
-		return "", nil, errors.Wrap(err, "sign transaction")
-	}
-	dataM, err := tx.MarshalBinary()
-	if err != nil {
-		return "", nil, errors.Wrap(err, "marshal tx data")
-	}
-
-	return hexutil.Encode(dataM), tx, nil
-}
-
-func NewSignedTX(
-	netID int64,
-	data []byte,
-	gasLimit uint64,
-	gasBaseFee *big.Int,
-	gasTip *big.Int,
-	to common.Address,
-	nonce uint64,
-	prvKey *ecdsa.PrivateKey,
-) (string, *types.Transaction, error) {
-	signer := types.LatestSignerForChainID(big.NewInt(netID))
-
-	tx, err := types.SignNewTx(prvKey, signer, &types.DynamicFeeTx{
-		ChainID:   big.NewInt(netID),
-		Nonce:     nonce,
-		GasFeeCap: big.NewInt(0).Add(gasBaseFee, gasTip),
-		GasTipCap: gasTip,
-		Gas:       gasLimit,
-		To:        &to,
-		Data:      data,
-	})
-	if err != nil {
-		return "", nil, errors.Wrap(err, "sign transaction")
-	}
-	dataM, err := tx.MarshalBinary()
-	if err != nil {
-		return "", nil, errors.Wrap(err, "marshal tx data")
-	}
-
-	return hexutil.Encode(dataM), tx, nil
 }
 
 func signPayload(payload []byte, prvKey *ecdsa.PrivateKey, pubKey *common.Address) (string, error) {

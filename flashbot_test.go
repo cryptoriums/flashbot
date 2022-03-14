@@ -15,12 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cryptoriums/packages/ethereum"
 	"github.com/cryptoriums/packages/private_file"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/joho/godotenv"
@@ -30,7 +29,7 @@ import (
 
 const (
 	gasLimit    = 3_000_000
-	gasPrice    = 10 * params.GWei
+	gasPrice    = 10
 	blockNumMax = 10
 
 	// Some ERC20 token with approve function.
@@ -105,16 +104,6 @@ func Example() {
 	nonce, err := client.NonceAt(ctx, *pubKey, nil)
 	ExitOnError(logger, err)
 
-	abiP, err := abi.JSON(strings.NewReader(ContractABI))
-	ExitOnError(logger, err)
-
-	data, err := abiP.Pack(
-		"approve",
-		common.HexToAddress("0xd2ebc17f4dae9e512cae16da5ea9f55b7f65a623"),
-		big.NewInt(1),
-	)
-	ExitOnError(logger, err)
-
 	addr, err := GetContractAddress(netID)
 	ExitOnError(logger, err)
 
@@ -140,22 +129,26 @@ func Example() {
 	// 	)
 	// }
 
+	tx, txHex, err := ethereum.NewSignedTX(
+		ctx,
+		privKey,
+		addr,
+		ContractABI,
+		nonce,
+		netID.Int64(),
+		"approve",
+		[]interface{}{common.HexToAddress("0xd2ebc17f4dae9e512cae16da5ea9f55b7f65a623"), big.NewInt(1)},
+		gasLimit,
+		gasPrice,
+		gasPrice,
+		0,
+	)
+	ExitOnError(logger, err)
+
+	level.Info(logger).Log("msg", "created transaction", "hash", tx.Hash())
+
 	// Make a request to the Call endpoint for simulation.
 	{
-
-		txHex, tx, err := NewSignedTX(
-			netID.Int64(),
-			data,
-			gasLimit,
-			big.NewInt(gasPrice),
-			big.NewInt(0),
-			addr,
-			nonce,
-			privKey,
-		)
-		ExitOnError(logger, err)
-		level.Info(logger).Log("msg", "created call transaction", "hash", tx.Hash())
-
 		resp, err := flashbot.CallBundle(
 			ctx,
 			[]string{txHex},
@@ -172,20 +165,7 @@ func Example() {
 	{
 		blockNumber, err := client.BlockNumber(ctx)
 		ExitOnError(logger, err)
-		nonce, err = client.NonceAt(ctx, *pubKey, nil)
-		ExitOnError(logger, err)
 
-		txHex, tx, err := NewSignedTX(
-			netID.Int64(),
-			data,
-			gasLimit,
-			big.NewInt(gasPrice),
-			big.NewInt(0),
-			addr,
-			nonce,
-			privKey,
-		)
-		ExitOnError(logger, err)
 		level.Info(logger).Log("msg", "created send transaction", "hash", tx.Hash())
 
 		var resp *Response
