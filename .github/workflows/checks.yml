@@ -41,5 +41,4 @@ jobs:
       - name: Running tests
         run: make test
         env:
-          NODE_URL: ${{ secrets.NODE_URL }}
-          ETH_PRIVATE_KEY: ${{ secrets.ETH_PRIVATE_KEY }}
+          env: ${{ secrets.env }}

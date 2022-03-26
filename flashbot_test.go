@@ -4,27 +4,27 @@
 package flashbot
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
-	"github.com/cryptoriums/packages/ethereum"
-	"github.com/cryptoriums/packages/private_file"
+	"github.com/cryptoriums/packages/env"
+	ethereum_p "github.com/cryptoriums/packages/ethereum"
+	"github.com/cryptoriums/packages/testutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
-	"golang.org/x/tools/godoc/util"
 )
 
 const (
@@ -37,60 +37,28 @@ const (
 	contractAddressMainnet = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
 )
 
-var logger log.Logger
+var logger = log.With(
+	log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
+	"ts", log.TimestampFormat(func() time.Time { return time.Now().UTC() }, "jan 02 15:04:05.00"),
+	"caller", log.Caller(4),
+)
 
-func init() {
-	logger = log.With(
-		log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
-		"ts", log.TimestampFormat(func() time.Time { return time.Now().UTC() }, "jan 02 15:04:05.00"),
-		"caller", log.Caller(4),
-	)
-
-	env, err := ioutil.ReadFile(".env")
-	if os.IsNotExist(err) { // In the CI the file doesn't exist and sets directly the env vars.
-		return
-	}
-	ExitOnError(logger, err)
-	if !util.IsText(env) {
-		level.Info(logger).Log("msg", "env file is encrypted")
-		env, err = private_file.DecryptWithPasswordLoop(env)
-		if err != nil {
-			ExitOnError(logger, err)
-		}
-	}
-
-	rr := bytes.NewReader(env)
-	envMap, err := godotenv.Parse(rr)
-	ExitOnError(logger, err)
-
-	// Copied from the godotenv source code.
-	currentEnv := map[string]bool{}
-	rawEnv := os.Environ()
-	for _, rawEnvLine := range rawEnv {
-		key := strings.Split(rawEnvLine, "=")[0]
-		currentEnv[key] = true
-	}
-
-	for key, value := range envMap {
-		if !currentEnv[key] {
-			os.Setenv(key, value)
-		}
-	}
-}
-
-func Example() {
+func TestExample(t *testing.T) {
 	ctx := context.Background()
 
-	nodeURL := os.Getenv("NODE_URL")
+	envs, err := env.LoadFromEnvVarOrFile("env", "./env.json")
+	ExitOnError(logger, err)
+	env, ok := env.EnvForNetwork(envs, ethereum_p.GoerliName)
+	testutil.Assert(t, ok, "env couldn't be loaded")
 
-	client, err := ethclient.DialContext(ctx, nodeURL)
+	client, err := ethclient.DialContext(ctx, env.Nodes[0])
 	ExitOnError(logger, err)
 
 	netID, err := client.NetworkID(ctx)
 	ExitOnError(logger, err)
-	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", nodeURL)
+	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", env.Nodes[0])
 
-	privKey, pubKey, err := GetKey("ETH_PRIVATE_KEY")
+	privKey, pubKey, err := Keys(env.Accounts[0].Priv)
 	ExitOnError(logger, err)
 
 	level.Info(logger).Log("msg", "pub key for", "addr", pubKey.Hex())
@@ -129,7 +97,7 @@ func Example() {
 	// 	)
 	// }
 
-	tx, txHex, err := ethereum.NewSignedTX(
+	tx, txHex, err := ethereum_p.NewSignedTX(
 		ctx,
 		privKey,
 		addr,
@@ -137,14 +105,14 @@ func Example() {
 		nonce,
 		netID.Int64(),
 		"approve",
-		[]interface{}{common.HexToAddress("0xd2ebc17f4dae9e512cae16da5ea9f55b7f65a623"), big.NewInt(1)},
+		// Use random address so that the TX uses more than the required 42k gas.
+		[]interface{}{randomAddress(), big.NewInt(1)},
 		gasLimit,
 		gasPrice,
 		gasPrice,
 		0,
 	)
 	ExitOnError(logger, err)
-
 	level.Info(logger).Log("msg", "created transaction", "hash", tx.Hash())
 
 	// Make a request to the Call endpoint for simulation.
@@ -185,7 +153,6 @@ func Example() {
 		)
 	}
 
-	// Output:
 }
 
 func ExitOnError(logger log.Logger, err error) {
@@ -195,8 +162,7 @@ func ExitOnError(logger log.Logger, err error) {
 	}
 }
 
-func GetKey(envName string) (*ecdsa.PrivateKey, *common.Address, error) {
-	_privateKey := os.Getenv(envName)
+func Keys(_privateKey string) (*ecdsa.PrivateKey, *common.Address, error) {
 	privateKey, err := crypto.HexToECDSA(strings.TrimSpace(_privateKey))
 	if err != nil {
 		return nil, nil, err
@@ -212,14 +178,6 @@ func GetKey(envName string) (*ecdsa.PrivateKey, *common.Address, error) {
 	return privateKey, &publicAddress, nil
 }
 
-func Keccak256(input []byte) [32]byte {
-	hash := crypto.Keccak256(input)
-	var hashed [32]byte
-	copy(hashed[:], hash)
-
-	return hashed
-}
-
 func GetContractAddress(networkID *big.Int) (common.Address, error) {
 	switch netID := networkID.Int64(); netID {
 	case 1:
@@ -229,6 +187,14 @@ func GetContractAddress(networkID *big.Int) (common.Address, error) {
 	default:
 		return common.Address{}, errors.Errorf("network id not supported id:%v", netID)
 	}
+}
+
+func randomAddress() common.Address {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		panic(err)
+	}
+	return common.HexToAddress(hex.EncodeToString(bytes))
 }
 
 const ContractABI = `[
