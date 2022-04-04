@@ -23,6 +23,8 @@ import (
 )
 
 type Flashboter interface {
+	SendPrivateTransaction(ctx context.Context, txHex string, blockNum uint64, fast bool) (*SendPrivateTransactionResponse, error)
+	CancelPrivateTransaction(ctx context.Context, txHash common.Hash) (*CancelPrivateTransactionResponse, error)
 	SendBundle(ctx context.Context, txsHex []string, blockNum uint64) (*Response, error)
 	CallBundle(ctx context.Context, txsHex []string, blockNumState uint64) (*Response, error)
 	GetBundleStats(ctx context.Context, bundleHash string, blockNum uint64) (*ResultBundleStats, error)
@@ -38,6 +40,18 @@ type Params struct {
 type ParamsSendCall struct {
 	Params
 	Txs []string `json:"txs,omitempty"`
+}
+
+type ParamsPrivateTransaction struct {
+	Tx             string `json:"tx,omitempty"`
+	МaxBlockNumber string `json:"maxBlockNumber,omitempty"`
+	Preferences    struct {
+		Fast bool `json:"fast,omitempty"`
+	} `json:"preferences,omitempty"`
+}
+
+type ParamsCancelPrivateTransaction struct {
+	TxHash string `json:"txHash,omitempty"`
 }
 
 type ParamsStats struct {
@@ -220,6 +234,65 @@ func (self *Flashbot) EstimateGasBundle(
 	rr, err := parseResp(resp, blockNum)
 	if err != nil {
 		return nil, err
+	}
+
+	return rr, nil
+}
+
+type SendPrivateTransactionResponse struct {
+	Error  `json:"error,omitempty"`
+	Result string `json:"result,omitempty"`
+}
+
+type CancelPrivateTransactionResponse struct {
+	Error  `json:"error,omitempty"`
+	Result bool `json:"result,omitempty"`
+}
+
+func (self *Flashbot) SendPrivateTransaction(ctx context.Context, txHex string, blockNum uint64, fast bool) (*SendPrivateTransactionResponse, error) {
+	param := ParamsPrivateTransaction{
+		Tx:             txHex,
+		МaxBlockNumber: hexutil.EncodeUint64(blockNum),
+	}
+	resp, err := self.req(ctx, "eth_sendPrivateTransaction", param)
+	if err != nil {
+		return nil, errors.Wrap(err, "flashbot private TX request")
+	}
+
+	rr := &SendPrivateTransactionResponse{}
+
+	err = json.Unmarshal(resp, rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unmarshal flashbot response:%v", string(resp))
+	}
+
+	if rr.Error.Code != 0 {
+		errStr := fmt.Sprintf("flashbot request returned an error:%+v,%v block:%v", rr.Error, rr.Message, blockNum)
+		return nil, errors.New(errStr)
+	}
+
+	return rr, nil
+}
+
+func (self *Flashbot) CancelPrivateTransaction(ctx context.Context, txHash common.Hash) (*CancelPrivateTransactionResponse, error) {
+	param := ParamsCancelPrivateTransaction{
+		TxHash: txHash.Hex(),
+	}
+	resp, err := self.req(ctx, "eth_cancelPrivateTransaction", param)
+	if err != nil {
+		return nil, errors.Wrap(err, "flashbot cancel pivate TX request")
+	}
+
+	rr := &CancelPrivateTransactionResponse{}
+
+	err = json.Unmarshal(resp, rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unmarshal flashbot response:%v", string(resp))
+	}
+
+	if rr.Error.Code != 0 {
+		errStr := fmt.Sprintf("flashbot request returned an error:%+v,%v", rr.Error, rr.Message)
+		return nil, errors.New(errStr)
 	}
 
 	return rr, nil
