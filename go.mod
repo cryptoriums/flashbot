@@ -3,8 +3,8 @@ module github.com/cryptoriums/flashbot
 go 1.17
 
 require (
-	github.com/cryptoriums/packages v0.0.0-20220326124015-e12ba2bceadc
-	github.com/ethereum/go-ethereum v1.10.16
+	github.com/cryptoriums/packages v0.0.0-20220526163627-6a044595de1c
+	github.com/ethereum/go-ethereum v1.10.19-0.20220526072637-0287e1a7c00c
 	github.com/go-kit/log v0.2.0
 	github.com/pkg/errors v0.9.1
 )
@@ -12,10 +12,11 @@ require (
 require (
 	github.com/VictoriaMetrics/fastcache v1.9.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/btcsuite/btcd v0.22.0-beta // indirect
+	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.8.0 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/edsrzf/mmap-go v1.1.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -28,6 +29,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
 	github.com/holiman/uint256 v1.2.0 // indirect
+	github.com/jinzhu/copier v0.3.5 // indirect
 	github.com/mattn/go-isatty v0.0.13 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
