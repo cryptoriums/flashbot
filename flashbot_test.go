@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/cryptoriums/packages/env"
-	ethereum_p "github.com/cryptoriums/packages/ethereum"
 	"github.com/cryptoriums/packages/testutil"
+	tx_p "github.com/cryptoriums/packages/tx"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -46,39 +46,37 @@ var logger = log.With(
 func TestExample(t *testing.T) {
 	ctx := context.Background()
 
-	envs, err := env.LoadFromEnvVarOrFile("env", "./env.json")
-	ExitOnError(logger, err)
-	env, ok := env.EnvForNetwork(envs, ethereum_p.GoerliName)
-	testutil.Assert(t, ok, "env couldn't be loaded")
+	envr, err := env.LoadFromEnvVarOrFile("env", "env.json")
+	testutil.Ok(t, err)
 
-	client, err := ethclient.DialContext(ctx, env.Nodes[0])
-	ExitOnError(logger, err)
+	client, err := ethclient.DialContext(ctx, envr.Nodes[0].URL)
+	testutil.Ok(t, err)
 
 	netID, err := client.NetworkID(ctx)
-	ExitOnError(logger, err)
-	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", env.Nodes[0])
+	testutil.Ok(t, err)
+	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", envr.Nodes[0].URL)
 
-	privKey, pubKey, err := Keys(env.Accounts[0].Priv)
-	ExitOnError(logger, err)
+	privKey, pubKey, err := Keys(envr.Accounts[0].Priv)
+	testutil.Ok(t, err)
 
 	level.Info(logger).Log("msg", "pub key for", "addr", pubKey.Hex())
 
 	endpoint, err := DefaultApi(netID.Int64())
-	ExitOnError(logger, err)
+	testutil.Ok(t, err)
 
 	flashbot, err := New(privKey, endpoint)
-	ExitOnError(logger, err)
+	testutil.Ok(t, err)
 
 	nonce, err := client.NonceAt(ctx, *pubKey, nil)
-	ExitOnError(logger, err)
+	testutil.Ok(t, err)
 
 	addr, err := GetContractAddress(netID)
-	ExitOnError(logger, err)
+	testutil.Ok(t, err)
 
 	// // Make a call to estimate gas.
 	// {
 	// 	blockNumber, err := client.BlockNumber(ctx)
-	// 	ExitOnError(logger, err)
+	// 	testutil.Ok(t,err)
 	// 	resp, err := flashbot.EstimateGasBundle(
 	// 		ctx,
 	// 		[]Tx{
@@ -90,14 +88,14 @@ func TestExample(t *testing.T) {
 	// 		},
 	// 		blockNumber,
 	// 	)
-	// 	ExitOnError(logger, err)
+	// 	testutil.Ok(t,err)
 
 	// 	level.Info(logger).Log("msg", "Called Bundle",
 	// 		"respStruct", fmt.Sprintf("%+v", resp),
 	// 	)
 	// }
 
-	tx, txHex, err := ethereum_p.NewSignedTX(
+	tx, txHex, err := tx_p.NewSignedTX(
 		ctx,
 		privKey,
 		addr,
@@ -112,7 +110,7 @@ func TestExample(t *testing.T) {
 		gasPrice,
 		0,
 	)
-	ExitOnError(logger, err)
+	testutil.Ok(t, err)
 	level.Info(logger).Log("msg", "created transaction", "hash", tx.Hash())
 
 	// Make a request to the Call endpoint for simulation.
@@ -122,7 +120,7 @@ func TestExample(t *testing.T) {
 			[]string{txHex},
 			0,
 		)
-		ExitOnError(logger, err)
+		testutil.Ok(t, err)
 
 		level.Info(logger).Log("msg", "Called Bundle",
 			"respStruct", fmt.Sprintf("%+v", resp),
@@ -132,7 +130,7 @@ func TestExample(t *testing.T) {
 	// Make a call to the Send endpoint.
 	{
 		blockNumber, err := client.BlockNumber(ctx)
-		ExitOnError(logger, err)
+		testutil.Ok(t, err)
 
 		level.Info(logger).Log("msg", "created send transaction", "hash", tx.Hash())
 
@@ -144,7 +142,7 @@ func TestExample(t *testing.T) {
 				blockNumber+i,
 			)
 			time.Sleep(100 * time.Millisecond)
-			ExitOnError(logger, err)
+			testutil.Ok(t, err)
 		}
 
 		level.Info(logger).Log("msg", "Sent Bundle",
