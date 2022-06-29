@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httputil"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -464,11 +465,15 @@ func (self *Flashbot) req(ctx context.Context, method string, params ...interfac
 	}
 
 	if resp.StatusCode/100 != 2 {
-		rbody, err := ioutil.ReadAll(resp.Body)
+		respDump, err := httputil.DumpResponse(resp, true)
 		if err != nil {
 			return nil, errors.Errorf("bad response status %v", resp.Status)
 		}
-		return nil, errors.Errorf("bad response resp status:%v  respBody:%v reqMethod:%+v", resp.Status, string(rbody)+string(res), method)
+		reqDump, err := httputil.DumpRequestOut(req, true)
+		if err != nil {
+			return nil, errors.Errorf("bad response resp respDump:%v", respDump)
+		}
+		return nil, errors.Errorf("bad response resp respDump:%v reqDump:%v", respDump, reqDump)
 	}
 	err = resp.Body.Close()
 	if err != nil {
