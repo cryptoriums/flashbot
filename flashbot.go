@@ -29,6 +29,7 @@ type Flashboter interface {
 	SendBundle(ctx context.Context, txsHex []string, blockNum uint64) (*Response, error)
 	CallBundle(ctx context.Context, txsHex []string, blockNumState uint64) (*Response, error)
 	GetBundleStats(ctx context.Context, bundleHash string, blockNum uint64) (*ResultBundleStats, error)
+	GetUserStats(ctx context.Context, blockNum uint64) (*ResultUserStats, error)
 	EstimateGasBundle(ctx context.Context, txs []Tx, blockNum uint64) (*Response, error)
 	Api() *Api
 }
@@ -55,7 +56,7 @@ type ParamsCancelPrivateTransaction struct {
 	TxHash string `json:"txHash,omitempty"`
 }
 
-type ParamsStats struct {
+type ParamsBundleStats struct {
 	Params
 	BundleHash string `json:"bundleHash,omitempty"`
 }
@@ -82,6 +83,21 @@ type Result struct {
 	BundleHash     string
 	Metadata
 	Results []TxResult
+}
+
+type ResultUserStats struct {
+	Error
+	Result BundleUserStats
+}
+
+type BundleUserStats struct {
+	IsHighPriority       bool   `json:"is_high_priority,omitempty"`
+	AllTimeMinerPayments string `json:"all_time_miner_payments,omitempty"`
+	AllTimeGasSimulated  string `json:"all_time_gas_simulated,omitempty"`
+	Last7dMinerPayments  string `json:"last_7d_miner_payments,omitempty"`
+	Last7dGasSimulated   string `json:"last_7d_gas_simulated,omitempty"`
+	Last1dMinerPayments  string `json:"last_1d_miner_payments,omitempty"`
+	Last1dGasSimulated   string `json:"last_1d_gas_simulated,omitempty"`
 }
 
 type ResultBundleStats struct {
@@ -375,14 +391,14 @@ func (self *Flashbot) GetBundleStats(
 	blockNum uint64,
 ) (*ResultBundleStats, error) {
 
-	param := ParamsStats{
+	param := ParamsBundleStats{
 		BundleHash: bundleHash,
 		Params:     Params{BlockNum: hexutil.EncodeUint64(blockNum)},
 	}
 
 	resp, err := self.req(ctx, "flashbots_getBundleStats", param)
 	if err != nil {
-		return nil, errors.Wrap(err, "flashbot stats request")
+		return nil, errors.Wrap(err, "flashbot bundle stats request")
 	}
 
 	rr := &ResultBundleStats{}
@@ -390,6 +406,33 @@ func (self *Flashbot) GetBundleStats(
 	err = json.Unmarshal(resp, rr)
 	if err != nil {
 		return nil, errors.Wrap(err, "unmarshal flashbot bundle stats response")
+	}
+
+	if rr.Error.Code != 0 {
+		return nil, errors.Errorf("flashbot request returned an error:%+v,%v", rr.Error, rr.Message)
+	}
+
+	return rr, nil
+
+}
+
+func (self *Flashbot) GetUserStats(
+	ctx context.Context,
+	blockNum uint64,
+) (*ResultUserStats, error) {
+
+	param := hexutil.EncodeUint64(blockNum)
+
+	resp, err := self.req(ctx, "flashbots_getUserStats", param)
+	if err != nil {
+		return nil, errors.Wrap(err, "flashbot user stats request")
+	}
+
+	rr := &ResultUserStats{}
+
+	err = json.Unmarshal(resp, rr)
+	if err != nil {
+		return nil, errors.Wrap(err, "unmarshal flashbot user stats response")
 	}
 
 	if rr.Error.Code != 0 {
@@ -432,8 +475,6 @@ func (self *Flashbot) req(ctx context.Context, method string, params ...interfac
 		return nil, err
 	}
 
-	// return nil, errors.New("payload" + string(payload))
-
 	req, err := http.NewRequestWithContext(ctx, "POST", self.api.URL, ioutil.NopCloser(bytes.NewReader(payload)))
 	if err != nil {
 		return nil, errors.Wrap(err, "creatting flashbot request")
@@ -459,10 +500,6 @@ func (self *Flashbot) req(ctx context.Context, method string, params ...interfac
 	if err != nil {
 		return nil, errors.Wrap(err, "flashbot request")
 	}
-	res, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "reading flashbot reply")
-	}
 
 	if resp.StatusCode/100 != 2 {
 		respDump, err := httputil.DumpResponse(resp, true)
@@ -475,6 +512,12 @@ func (self *Flashbot) req(ctx context.Context, method string, params ...interfac
 		}
 		return nil, errors.Errorf("bad response resp respDump:%v reqDump:%v", respDump, reqDump)
 	}
+
+	res, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading flashbot reply")
+	}
+
 	err = resp.Body.Close()
 	if err != nil {
 		return nil, errors.Wrap(err, "closing flashbot reply body")

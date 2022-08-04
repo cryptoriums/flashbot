@@ -1,6 +1,6 @@
 module github.com/cryptoriums/flashbot
 
-go 1.17
+go 1.18
 
 require (
 	github.com/cryptoriums/packages v0.0.0-20220602100559-f17e96a13f42
