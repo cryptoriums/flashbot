@@ -508,9 +508,9 @@ func (self *Flashbot) req(ctx context.Context, method string, params ...interfac
 		}
 		reqDump, err := httputil.DumpRequestOut(req, true)
 		if err != nil {
-			return nil, errors.Errorf("bad response resp respDump:%v", respDump)
+			return nil, errors.Errorf("bad response resp respDump:%v", string(respDump))
 		}
-		return nil, errors.Errorf("bad response resp respDump:%v reqDump:%v", respDump, reqDump)
+		return nil, errors.Errorf("bad response resp respDump:%v reqDump:%v", string(respDump), string(reqDump))
 	}
 
 	res, err := ioutil.ReadAll(resp.Body)
