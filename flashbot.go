@@ -11,7 +11,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"time"
@@ -474,7 +474,7 @@ func (self *Flashbot) req(ctx context.Context, method string, params ...interfac
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", self.api.URL, ioutil.NopCloser(bytes.NewReader(payload)))
+	req, err := http.NewRequestWithContext(ctx, "POST", self.api.URL, io.NopCloser(bytes.NewReader(payload)))
 	if err != nil {
 		return nil, errors.Wrap(err, "creatting flashbot request")
 	}
@@ -512,7 +512,7 @@ func (self *Flashbot) req(ctx context.Context, method string, params ...interfac
 		return nil, errors.Errorf("bad response resp respDump:%v reqDump:%v", string(respDump), string(reqDump))
 	}
 
-	res, err := ioutil.ReadAll(resp.Body)
+	res, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "reading flashbot reply")
 	}
