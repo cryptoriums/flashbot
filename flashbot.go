@@ -158,7 +158,7 @@ func DefaultApi(netID int64) (*Api, error) {
 	return &Api{URL: url, SupportsSimulation: true}, nil
 }
 
-func NewAll(netID int64, prvKey *ecdsa.PrivateKey) ([]Flashboter, error) {
+func NewAll(netID int64, prvKey *ecdsa.PrivateKey, additional ...*Api) ([]Flashboter, error) {
 	var apis []*Api
 	ep, err := DefaultApi(netID)
 	if err != nil {
@@ -170,6 +170,7 @@ func NewAll(netID int64, prvKey *ecdsa.PrivateKey) ([]Flashboter, error) {
 	case 1:
 		apis = append(apis, &Api{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
 		apis = append(apis, &Api{URL: "https://bundle.miningdao.io", SupportsSimulation: false})
+		apis = append(apis, additional...)
 	}
 	return NewMulti(netID, prvKey, apis...)
 }

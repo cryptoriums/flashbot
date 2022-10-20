@@ -43,6 +43,104 @@ var logger = log.With(
 	"caller", log.Caller(4),
 )
 
+// func TestPrivateTx(t *testing.T) {
+// 	ctx := context.Background()
+
+// 	envs, err := env.LoadFromEnvVarOrFile("env", "./env.json")
+// 	testutil.Ok(t,err)
+// 	env, ok := env.EnvForNetwork(envs, ethereum_p.GoerliName)
+// 	testutil.Assert(t, ok, "env couldn't be loaded")
+
+// 	client, err := ethclient.DialContext(ctx, env.Nodes[0])
+// 	testutil.Ok(t,err)
+
+// 	netID, err := client.NetworkID(ctx)
+// 	testutil.Ok(t,err)
+// 	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", env.Nodes[0])
+
+// 	privKey, pubKey, err := Keys(env.Accounts[0].Priv)
+// 	testutil.Ok(t,err)
+
+// 	level.Info(logger).Log("msg", "pub key for", "addr", pubKey.Hex())
+
+// 	endpoint, err := DefaultApi(netID.Int64())
+// 	testutil.Ok(t,err)
+
+// 	flashbot, err := New(privKey, endpoint)
+// 	testutil.Ok(t,err)
+
+// 	nonce, err := client.NonceAt(ctx, *pubKey, nil)
+// 	testutil.Ok(t,err)
+
+// 	addr, err := GetContractAddress(netID)
+// 	testutil.Ok(t,err)
+
+// 	tx, txHex, err := ethereum_p.NewSignedTX(
+// 		ctx,
+// 		privKey,
+// 		addr,
+// 		ContractABI,
+// 		nonce,
+// 		netID.Int64(),
+// 		"approve",
+// 		// Use random address so that the TX uses more than the required 42k gas.
+// 		[]interface{}{randomAddress(), big.NewInt(1)},
+// 		gasLimit,
+// 		gasPrice,
+// 		gasPrice,
+// 		0,
+// 	)
+// 	testutil.Ok(t,err)
+// 	level.Info(logger).Log("msg", "created transaction", "hash", tx.Hash())
+
+// 	blockNumber, err := client.BlockNumber(ctx)
+// 	testutil.Ok(t,err)
+
+// 	{
+// 		resp, err := flashbot.SendPrivateTransaction(
+// 			ctx,
+// 			txHex,
+// 			blockNumber+10,
+// 			false,
+// 		)
+// 		testutil.Ok(t,err)
+
+// 		level.Info(logger).Log("msg", "SendPrivateTransaction",
+// 			"respStruct", fmt.Sprintf("%+v", resp),
+// 		)
+// 	}
+// }
+
+func TestPrivateTx(t *testing.T) {
+	ctx := context.Background()
+
+	envr, err := env.LoadFromEnvVarOrFile("env", "env.json", "mainnet")
+	testutil.Ok(t, err)
+
+	client, err := ethclient.DialContext(ctx, envr.Nodes[0].URL)
+	testutil.Ok(t, err)
+
+	netID, err := client.NetworkID(ctx)
+	testutil.Ok(t, err)
+	level.Info(logger).Log("msg", "network", "id", netID.String(), "node", envr.Nodes[0].URL)
+
+	privKey, pubKey, err := Keys(envr.Accounts[0].Priv)
+	testutil.Ok(t, err)
+
+	level.Info(logger).Log("msg", "pub key for", "addr", pubKey.Hex())
+
+	endpoint, err := DefaultApi(netID.Int64())
+	testutil.Ok(t, err)
+
+	flashbot, err := New(privKey, endpoint)
+	testutil.Ok(t, err)
+
+	respC, err := flashbot.CancelPrivateTransaction(ctx, common.HexToHash("0"))
+	testutil.Ok(t, err)
+
+	testutil.Assert(t, respC.Result, "resp.Result didn't return true")
+}
+
 func TestExample(t *testing.T) {
 	ctx := context.Background()
 
