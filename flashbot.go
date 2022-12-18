@@ -169,7 +169,6 @@ func NewAll(netID int64, prvKey *ecdsa.PrivateKey, additional ...*Api) ([]Flashb
 	switch netID {
 	case 1:
 		apis = append(apis, &Api{URL: "https://api.edennetwork.io/v1/bundle", SupportsSimulation: false})
-		apis = append(apis, &Api{URL: "https://bundle.miningdao.io", SupportsSimulation: false})
 		apis = append(apis, additional...)
 	}
 	return NewMulti(netID, prvKey, apis...)
