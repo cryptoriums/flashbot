@@ -30,18 +30,23 @@ type Flashboter interface {
 	CallBundle(ctx context.Context, txsHex []string, blockNumState uint64) (*Response, error)
 	GetBundleStats(ctx context.Context, bundleHash string, blockNum uint64) (*ResultBundleStats, error)
 	GetUserStats(ctx context.Context, blockNum uint64) (*ResultUserStats, error)
-	EstimateGasBundle(ctx context.Context, txs []Tx, blockNum uint64) (*Response, error)
 	Api() *Api
 }
 
-type Params struct {
-	BlockNum      string `json:"blockNumber,omitempty"`
-	StateBlockNum string `json:"stateBlockNumber,omitempty"`
+type ParamsCall struct {
+	Txs           []string `json:"txs,omitempty"`
+	BlockNum      string   `json:"blockNumber,omitempty"`
+	StateBlockNum string   `json:"stateBlockNumber,omitempty"`
 }
 
-type ParamsSendCall struct {
-	Params
-	Txs []string `json:"txs,omitempty"`
+type ParamsStats struct {
+	BlockNum   string `json:"blockNumber,omitempty"`
+	BundleHash string `json:"bundleHash,omitempty"`
+}
+
+type ParamsSend struct {
+	BlockNum string   `json:"blockNumber,omitempty"`
+	Txs      []string `json:"txs,omitempty"`
 }
 
 type ParamsPrivateTransaction struct {
@@ -56,20 +61,10 @@ type ParamsCancelPrivateTransaction struct {
 	TxHash string `json:"txHash,omitempty"`
 }
 
-type ParamsBundleStats struct {
-	Params
-	BundleHash string `json:"bundleHash,omitempty"`
-}
-
 type Tx struct {
 	From common.Address `json:"from,omitempty"`
 	To   common.Address `json:"to,omitempty"`
 	Data []byte         `json:"data,omitempty"`
-}
-
-type ParamsGasEstimate struct {
-	Params
-	Txs []Tx `json:"txs,omitempty"`
 }
 
 type Metadata struct {
@@ -224,37 +219,6 @@ func (self *Flashbot) SetKey(prvKey *ecdsa.PrivateKey) error {
 	return nil
 }
 
-func (self *Flashbot) EstimateGasBundle(
-	ctx context.Context,
-	txs []Tx,
-	blockNum uint64,
-) (*Response, error) {
-	method := "eth_estimateGasBundle"
-	if self.api.MethodSend != "" {
-		method = self.api.MethodSend
-	}
-
-	param := ParamsGasEstimate{
-		Txs: txs,
-		Params: Params{
-			StateBlockNum: "latest",
-			BlockNum:      hexutil.EncodeUint64(blockNum),
-		},
-	}
-
-	resp, err := self.req(ctx, method, param)
-	if err != nil {
-		return nil, errors.Wrap(err, "flashbot send request")
-	}
-
-	rr, err := parseResp(resp, blockNum)
-	if err != nil {
-		return nil, err
-	}
-
-	return rr, nil
-}
-
 type SendPrivateTransactionResponse struct {
 	Error  `json:"error,omitempty"`
 	Result string `json:"result,omitempty"`
@@ -324,12 +288,9 @@ func (self *Flashbot) SendBundle(
 		method = self.api.MethodSend
 	}
 
-	param := ParamsSendCall{
-		Txs: txsHex,
-		Params: Params{
-			StateBlockNum: "latest",
-			BlockNum:      hexutil.EncodeUint64(blockNum),
-		},
+	param := ParamsSend{
+		Txs:      txsHex,
+		BlockNum: hexutil.EncodeUint64(blockNum),
 	}
 
 	resp, err := self.req(ctx, method, param)
@@ -364,11 +325,10 @@ func (self *Flashbot) CallBundle(
 	if _blockNumState != 0 {
 		blockNumState = hexutil.EncodeUint64(_blockNumState)
 	}
-	param := ParamsSendCall{
-		Txs: txsHex,
-		Params: Params{
-			StateBlockNum: blockNumState,
-			BlockNum:      hexutil.EncodeUint64(blockDummy)},
+	param := ParamsCall{
+		Txs:           txsHex,
+		BlockNum:      hexutil.EncodeUint64(blockDummy),
+		StateBlockNum: blockNumState,
 	}
 
 	resp, err := self.req(ctx, method, param)
@@ -390,9 +350,9 @@ func (self *Flashbot) GetBundleStats(
 	blockNum uint64,
 ) (*ResultBundleStats, error) {
 
-	param := ParamsBundleStats{
+	param := ParamsStats{
 		BundleHash: bundleHash,
-		Params:     Params{BlockNum: hexutil.EncodeUint64(blockNum)},
+		BlockNum:   hexutil.EncodeUint64(blockNum),
 	}
 
 	resp, err := self.req(ctx, "flashbots_getBundleStats", param)
@@ -565,8 +525,7 @@ func signPayload(payload []byte, prvKey *ecdsa.PrivateKey, pubKey *common.Addres
 		return "", errors.Wrap(err, "sign the payload")
 	}
 
-	return pubKey.Hex() +
-		":" + hexutil.Encode(signature), nil
+	return pubKey.Hex() + ":" + hexutil.Encode(signature), nil
 }
 
 func relayURLDefault(netID int64) (string, error) {
